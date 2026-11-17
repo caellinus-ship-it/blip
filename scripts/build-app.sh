@@ -15,6 +15,7 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 codesign --force --sign "${BLIP_SIGN_ID:-$(security find-identity -v -p codesigning | awk 'NR==1{print $2}')}" "$APP"
 
 pkill -x Blip || true
+while pgrep -x Blip >/dev/null; do sleep 0.1; done
 mkdir -p ~/Applications
 rm -rf ~/Applications/Blip.app
 cp -R "$APP" ~/Applications/Blip.app
