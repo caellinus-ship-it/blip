@@ -7,6 +7,7 @@ let package = Package(
   targets: [
     .target(name: "BlipCore"),
     .executableTarget(name: "Blip", dependencies: ["BlipCore"]),
+    .executableTarget(name: "blip-snap", dependencies: ["BlipCore"], path: "Sources/BlipSnap"),
     .testTarget(name: "BlipCoreTests", dependencies: ["BlipCore"]),
   ],
   swiftLanguageModes: [.v5]
