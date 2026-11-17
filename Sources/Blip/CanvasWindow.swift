@@ -40,6 +40,9 @@ final class CanvasWindow: NSPanel {
       defer: false)
     setFrame(screen.frame, display: false)
     isReleasedWhenClosed = false
+    // Panels default to hiding when their app deactivates; the controller would
+    // not notice and would keep "hovering" an invisible ship.
+    hidesOnDeactivate = false
     animationBehavior = .none
     isOpaque = false
     backgroundColor = .clear
