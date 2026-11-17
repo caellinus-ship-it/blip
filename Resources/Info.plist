@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.blip.assistant</string>
+  <key>CFBundleName</key>
+  <string>Blip</string>
+  <key>CFBundleExecutable</key>
+  <string>Blip</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>LSMinimumSystemVersion</key>
+  <string>26.0</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Blip listens when you press the mic button so you can ask questions out loud.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Blip turns what you say into text in the question box.</string>
+</dict>
+</plist>
