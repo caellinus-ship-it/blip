@@ -10,7 +10,8 @@ final class SummonController: NSObject {
   var onArrived: ((NSScreen, CGPoint) -> Void)?
   /// The hover anchor moved (dragged, or moved to another screen); screen coordinates.
   var onAnchorMoved: ((NSScreen, CGPoint) -> Void)?
-  /// The overlay has closed after a fly-off.
+  /// The summon is over: the overlay closed after its fly-off, or a new summon
+  /// replaced it. Called exactly once per summon.
   var onDismissed: (() -> Void)?
   var thinking = false { didSet { scene?.thinking = thinking } }
 
@@ -39,7 +40,9 @@ final class SummonController: NSObject {
   func shortcutPressed() {
     switch SummonState.onShortcut(phase: scene?.phase) {
     case .start, .restart:
-      tearDown()
+      // A restart throws away a ship that is flying off; a start may find one
+      // still lingering in `.gone`. Either way that summon is over.
+      endSummon()
       if let s = screenUnderPointer() ?? NSScreen.main { start(on: s, hoveringAt: nil) }
     case .dismiss:
       scene?.dismiss()
@@ -80,7 +83,16 @@ final class SummonController: NSObject {
     link = l
   }
 
-  /// Closes the overlay, if any, without telling anyone.
+  /// Ends the current summon, if any: closes the overlay and calls `onDismissed`
+  /// exactly once for it.
+  private func endSummon() {
+    guard window != nil else { return }
+    tearDown()
+    onDismissed?()
+  }
+
+  /// Closes the overlay, if any, without telling anyone. Used directly only
+  /// when the same summon continues on another screen.
   private func tearDown() {
     link?.invalidate()
     link = nil
@@ -129,8 +141,7 @@ final class SummonController: NSObject {
     if phase == .gone {
       blankTicks = w.buffer.pixels.allSatisfy { $0 == 0 } ? blankTicks + ticks : 0
       if blankTicks >= Self.blankTicksBeforeClose {
-        tearDown()
-        onDismissed?()
+        endSummon()
       }
     }
   }

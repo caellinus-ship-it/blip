@@ -8,7 +8,7 @@ import BlipCore
 /// origin. The buffer's top-left pixel sits at the window's top-left corner;
 /// the buffer is rounded up, so its last column and row may hang off the
 /// right and bottom edges.
-final class CanvasWindow: NSWindow {
+final class CanvasWindow: NSPanel {
   private static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
   private static let bitmapInfo = CGBitmapInfo(
     rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)
@@ -33,7 +33,11 @@ final class CanvasWindow: NSWindow {
     buffer = PixelBuffer(
       width: Int((size.width / CGFloat(ppp)).rounded(.up)),
       height: Int((size.height / CGFloat(ppp)).rounded(.up)))
-    super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+    // A non-activating panel: clicking or dragging the ship never activates Blip
+    // or takes key status from the app in front.
+    super.init(
+      contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+      defer: false)
     setFrame(screen.frame, display: false)
     isReleasedWhenClosed = false
     animationBehavior = .none
@@ -57,6 +61,9 @@ final class CanvasWindow: NSWindow {
     view.layer?.addSublayer(pixelLayer)
     contentView = view
   }
+
+  override var canBecomeKey: Bool { false }
+  override var canBecomeMain: Bool { false }
 
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
