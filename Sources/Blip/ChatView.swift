@@ -126,9 +126,7 @@ struct ChatView: View {
         .focused($inputFocused)
         .onSubmit { model.onSend?(model.input) }
       Button { model.onMic?() } label: {
-        Image(systemName: model.listening ? "mic.fill" : "mic")
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(model.listening ? bubbleColor : Palette.mic)
+        MicIcon(listening: model.listening, color: bubbleColor)
           .frame(width: 24, height: 24)
           .contentShape(Rectangle())
       }
@@ -187,6 +185,32 @@ private struct TypingBubble: View {
       .reportsBubbleRect()
     }
     .accessibilityLabel("Thinking")
+  }
+}
+
+/// The mic: an outline while idle; filled in the bubble color and pulsing in size steps while listening.
+private struct MicIcon: View {
+  let listening: Bool
+  let color: Color
+
+  private static let step: TimeInterval = 0.15
+  private static let scales: [CGFloat] = [1.0, 1.1, 1.2, 1.1]
+
+  var body: some View {
+    if listening {
+      TimelineView(.periodic(from: .now, by: Self.step)) { context in
+        let i = Int(context.date.timeIntervalSinceReferenceDate / Self.step) % Self.scales.count
+        symbol("mic.fill", color).scaleEffect(Self.scales[i])
+      }
+    } else {
+      symbol("mic", Palette.mic)
+    }
+  }
+
+  private func symbol(_ name: String, _ color: Color) -> some View {
+    Image(systemName: name)
+      .font(.system(size: 14, weight: .semibold))
+      .foregroundStyle(color)
   }
 }
 

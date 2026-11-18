@@ -35,6 +35,17 @@ import Testing
     log.finish(); _ = log.submit("again"); #expect(log.awaitingFirstText)
     log.fail(.timeout); #expect(!log.awaitingFirstText)
   }
+  @Test func noteAddsAProblemWithoutEndingTheWait() {
+    var log = ChatLog(); _ = log.submit("hi"); log.append(delta: "Hel")
+    log.note(.noMicPermission)
+    #expect(log.waiting)
+    #expect(log.messages.last?.role == .problem)
+    #expect(log.messages.last?.text == BlipProblem.noMicPermission.bubbleText)
+    log.append(delta: "lo")
+    #expect(log.messages[1].text == "Hello")
+    var idle = ChatLog(); idle.note(.noMicPermission)
+    #expect(!idle.waiting); #expect(idle.messages.map(\.role) == [.problem])
+  }
   @Test func problemsClassify() {
     #expect(BlipProblem.classify(resultText: "Failed to authenticate: OAuth session expired") == .notLoggedIn)
     #expect(BlipProblem.classify(resultText: "Usage limit reached") == .usageLimit)

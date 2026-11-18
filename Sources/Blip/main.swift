@@ -15,6 +15,13 @@ if CommandLine.arguments.contains("--capture-check") {
   MainActor.assumeIsolated { CaptureCheck.run() }
 }
 
+// `Blip --mic-check`: prints the Microphone and Speech Recognition permission and on-device support,
+// with no UI and without asking, then exits. Launch it as the app (`open -W -n ~/Applications/Blip.app
+// --stdout <file> --args --mic-check`) so Blip's own permissions are read.
+if CommandLine.arguments.contains("--mic-check") {
+  MicCheck.run()
+}
+
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let delegate = AppDelegate()

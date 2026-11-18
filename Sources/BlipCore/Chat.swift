@@ -103,8 +103,14 @@ public struct ChatLog {
 
   /// Ends any wait with a problem bubble.
   public mutating func fail(_ problem: BlipProblem) {
-    messages.append(ChatMessage(role: .problem, text: problem.bubbleText))
+    note(problem)
     finish()
+  }
+
+  /// Adds a problem bubble that has nothing to do with the question, if any, still being answered;
+  /// its reply keeps streaming into its own bubble.
+  public mutating func note(_ problem: BlipProblem) {
+    messages.append(ChatMessage(role: .problem, text: problem.bubbleText))
   }
 }
 

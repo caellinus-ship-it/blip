@@ -28,6 +28,9 @@ import BlipCore
   private var questionNumber = 0
   private var timeout: DispatchWorkItem?
   private var closed = false
+  private let dictation = Dictation()
+  /// What the text box held when the mic was pressed; spoken words go after it.
+  private var dictationPrefix = ""
 
   init(pool: BrainPool, settings: BlipSettings, screen: NSScreen) {
     self.pool = pool
@@ -36,6 +39,13 @@ import BlipCore
     session = pool.take()
     adopt(session)
     model.onSend = { [weak self] text in self?.send(text) }
+    model.onMic = { [weak self] in self?.micPressed() }
+    dictation.onText = { [weak self] spoken in
+      guard let self else { return }
+      self.model.input = DictationMerge.text(prefix: self.dictationPrefix, dictated: spoken)
+    }
+    dictation.onStopped = { [weak self] in self?.model.listening = false }
+    dictation.onDenied = { [weak self] in self?.model.log.note(.noMicPermission) }
 
     // Placed where the ship will hover, invisible, and holding the keyboard, so anything typed
     // during the fly-in lands in the box.
@@ -63,7 +73,9 @@ import BlipCore
     closed = true
     questionNumber += 1
     timeout?.cancel()
+    dictation.stop()
     model.onSend = nil
+    model.onMic = nil
     panel.fadeOutAndClose()
     if let session { pool.release(session) }
     session = nil
@@ -71,8 +83,16 @@ import BlipCore
 
   // MARK: Asking
 
+  private func micPressed() {
+    guard !closed else { return }
+    if !dictation.isListening { dictationPrefix = model.input }
+    dictation.toggle()
+    model.listening = dictation.isListening
+  }
+
   private func send(_ text: String) {
     guard !closed, model.log.submit(text) else { return }
+    dictation.stop()
     model.input = ""
     questionNumber += 1
     let number = questionNumber
