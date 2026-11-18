@@ -6,14 +6,23 @@ import BlipCore
 /// overlay once the ship has flown off.
 @MainActor
 final class SummonController: NSObject {
+  /// A new summon began on this screen; the ship is starting its fly-in.
+  var onSummoned: ((NSScreen) -> Void)?
   /// The ship has finished flying in; the point is the hover anchor in screen coordinates.
   var onArrived: ((NSScreen, CGPoint) -> Void)?
   /// The hover anchor moved (dragged, or moved to another screen); screen coordinates.
   var onAnchorMoved: ((NSScreen, CGPoint) -> Void)?
+  /// The shortcut sent the ship off; it is starting its fly-off.
+  var onFlyOff: (() -> Void)?
   /// The summon is over: the overlay closed after its fly-off, or a new summon
   /// replaced it. Called exactly once per summon.
   var onDismissed: (() -> Void)?
   var thinking = false { didSet { scene?.thinking = thinking } }
+  /// Half the width of the ship and its creature, in points.
+  var shipHalfWidth: CGFloat {
+    guard let w = window, let sc = scene else { return 0 }
+    return CGFloat(sc.hitRect.w * w.pointsPerPixel) / 2
+  }
 
   private static let tickSeconds: CFTimeInterval = 1.0 / 60
   private static let maxTicksPerFrame = 4
@@ -43,9 +52,14 @@ final class SummonController: NSObject {
       // A restart throws away a ship that is flying off; a start may find one
       // still lingering in `.gone`. Either way that summon is over.
       endSummon()
-      if let s = screenUnderPointer() ?? NSScreen.main { start(on: s, hoveringAt: nil) }
+      thinking = false
+      if let s = screenUnderPointer() ?? NSScreen.main {
+        start(on: s, hoveringAt: nil)
+        onSummoned?(s)
+      }
     case .dismiss:
       scene?.dismiss()
+      onFlyOff?()
     case .none:
       break
     }

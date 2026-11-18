@@ -21,8 +21,13 @@ final class BrainSession {
   /// Seconds `stop` waits for the process to honor SIGTERM before it sends SIGKILL.
   private static let killDelay: TimeInterval = 2
 
+  /// Debug switch `BLIP_DEBUG=1`: the child's stderr and every parsed event go to Blip's stderr.
+  private static let debug = ProcessInfo.processInfo.environment["BLIP_DEBUG"] == "1"
+
   init?(settings: BlipSettings) {
     var environment = ProcessInfo.processInfo.environment
+    // Debug switch `BLIP_NO_CLAUDE=1`: behave as if the tool were missing.
+    if environment["BLIP_NO_CLAUDE"] == "1" { return nil }
     let home = environment["HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()
     environment["HOME"] = home
     guard let claude = ClaudeLocator.find(custom: settings.claudePath, home: home,
@@ -40,7 +45,7 @@ final class BrainSession {
     process.environment = environment
     process.standardInput = input
     process.standardOutput = output
-    process.standardError = environment["BLIP_DEBUG"] == "1" ? FileHandle.standardError : FileHandle.nullDevice
+    process.standardError = Self.debug ? FileHandle.standardError : FileHandle.nullDevice
 
     // A write to a process that already died must fail as an error, not kill Blip with SIGPIPE.
     signal(SIGPIPE, SIG_IGN)
@@ -67,10 +72,13 @@ final class BrainSession {
 
   func send(text: String, jpegs: [Data], windows: [WindowInfo]) {
     guard !stopped else { return }
-    let line = Data((UserMessage.line(text: text, jpegs: jpegs, windows: windows) + "\n").utf8)
     let handle = input.fileHandleForWriting
+    // Encoding the images is done on the write queue too, so a send never holds up the main thread.
     // A failed write means the process died; that is reported through `onExit`.
-    writeQueue.async { try? handle.write(contentsOf: line) }
+    writeQueue.async {
+      let line = Data((UserMessage.line(text: text, jpegs: jpegs, windows: windows) + "\n").utf8)
+      try? handle.write(contentsOf: line)
+    }
   }
 
   /// Closes stdin and terminates the process, escalating to SIGKILL if it lingers. No events follow.
@@ -91,7 +99,9 @@ final class BrainSession {
 
   private func consume(_ chunk: Data) {
     for line in lines.append(chunk) where !stopped {
-      onEvent?(StreamParser.parse(line: line))
+      let event = StreamParser.parse(line: line)
+      if Self.debug { FileHandle.standardError.write(Data("BrainEvent \(event)\n".utf8)) }
+      onEvent?(event)
     }
   }
 
@@ -125,6 +135,9 @@ final class BrainSession {
 @MainActor final class BrainPool {
   private let settings: () -> BlipSettings
   private var standby: BrainSession?
+  /// Sessions handed out by `take` and not yet released, so `shutdown` can stop them.
+  private var taken: [BrainSession] = []
+  private var isShutDown = false
 
   init(settings: @escaping () -> BlipSettings) {
     self.settings = settings
@@ -133,21 +146,32 @@ final class BrainSession {
 
   /// Hands over the standby, or a session started on the spot if there is none.
   func take() -> BrainSession? {
-    if let session = standby {
-      standby = nil
-      return session
-    }
-    return startStandby()
+    guard !isShutDown else { return nil }
+    let session = standby ?? startStandby()
+    standby = nil
+    if let session { taken.append(session) }
+    return session
   }
 
   /// Stops a session that is done with and gets a fresh standby ready.
   func release(_ session: BrainSession) {
     session.stop()
-    if standby == nil { standby = startStandby() }
+    taken.removeAll { $0 === session }
+    if standby == nil && !isShutDown { standby = startStandby() }
+  }
+
+  /// Stops every session, idle or in use, and starts no more. For quitting, so no `claude` outlives Blip.
+  func shutdown() {
+    isShutDown = true
+    standby?.stop()
+    standby = nil
+    taken.forEach { $0.stop() }
+    taken = []
   }
 
   /// Replaces the idle standby so the next question uses the new settings.
   func settingsChanged() {
+    guard !isShutDown else { return }
     standby?.stop()
     standby = startStandby()
   }
