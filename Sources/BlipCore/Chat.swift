@@ -108,6 +108,16 @@ public struct ChatLog {
     hadReply = false
   }
 
+  /// The owner stopped the answer: what has arrived stays, and a small line says it was cut short.
+  /// Does nothing when no answer is on its way.
+  public mutating func stop() {
+    guard waiting else { return }
+    messages.append(ChatMessage(role: .note, text: Self.stoppedNote))
+    finish()
+  }
+
+  public static let stoppedNote = "Stopped."
+
   /// Ends any wait with a problem bubble.
   public mutating func fail(_ problem: BlipProblem) {
     note(problem)

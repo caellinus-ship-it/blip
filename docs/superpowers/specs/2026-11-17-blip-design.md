@@ -404,3 +404,10 @@ change it" **(owner)**.
   trill. A problem plays two falling low notes.
 - **Settings.** A Behavior panel with three switches, all on by default:
   Eyes follow the pointer, Moods, Scan beam.
+- **Stop (added later the same day).** A square on the left of the text box,
+  lit while an answer is on its way, stops it; so does Escape while the chat
+  has the keyboard (Escape also stops the microphone when no answer is
+  running). The words that already arrived stay, with a small "Stopped."
+  line. The hidden session is sent an interrupt rather than being replaced,
+  so it still remembers the conversation; if it never confirms the stop
+  within 10 seconds it is replaced.

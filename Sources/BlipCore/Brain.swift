@@ -321,6 +321,18 @@ public enum PermissionReply {
   }
 }
 
+/// The line that tells the session to stop the answer it is giving. The session keeps running and
+/// remembers the conversation; the stopped turn still ends with its `result` line.
+public enum StopRequest {
+  public static func line(id: String = UUID().uuidString) -> String {
+    let request: [String: Any] = [
+      "type": "control_request", "request_id": id, "request": ["subtype": "interrupt"],
+    ]
+    let data = (try? JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])) ?? Data()
+    return String(decoding: data, as: UTF8.self)
+  }
+}
+
 /// How much an action changes: nothing, something new and harmless, or something that cannot be
 /// taken back or reaches outside the usual folders.
 public enum ActionKind: Equatable { case read, gentle, risky }

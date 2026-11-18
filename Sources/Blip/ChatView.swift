@@ -10,6 +10,10 @@ import SwiftUI
   /// Enter was pressed in the text box; carries the box's text.
   var onSend: ((String) -> Void)?
   var onMic: (() -> Void)?
+  /// The stop button or Escape was pressed.
+  var onStop: (() -> Void)?
+  /// There is something to stop: an answer on its way, or the microphone listening.
+  var canStop: Bool { log.waiting || listening }
   /// The chat panel has the keyboard, so typing goes into the text box.
   @Published var hasKeyboard = false
   /// What the assistant is waiting for permission to do, in plain words; `nil` when nothing.
@@ -18,7 +22,8 @@ import SwiftUI
   var onAnswer: ((Bool) -> Void)?
 }
 
-/// The texting-style chat beside the ship: bubbles above, the text box with its mic below.
+/// The texting-style chat beside the ship: bubbles above; below, the text box with the stop button
+/// on its left and the mic on its right.
 /// Colors and sizes follow `chat()` in `docs/reference/mockup.html`.
 struct ChatView: View {
   static let width: CGFloat = 340
@@ -166,6 +171,18 @@ struct ChatView: View {
 
   private var inputRow: some View {
     HStack(spacing: 8) {
+      Button { model.onStop?() } label: {
+        // A plain square, lit while an answer is on its way and dim when there is nothing to stop.
+        RoundedRectangle(cornerRadius: 2)
+          .fill(model.log.waiting ? Palette.stop : Palette.dotDim)
+          .frame(width: 10, height: 10)
+          .frame(width: 24, height: 24)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .allowsHitTesting(model.log.waiting)  // not `disabled`, which would fade the idle square away
+      .accessibilityLabel("Stop")
+      .help("Stop (Esc)")
       TextField("", text: $model.input, prompt: Text("Ask \(name)").foregroundStyle(Palette.placeholder))
         .textFieldStyle(.plain)
         .font(.system(size: 13))
@@ -180,8 +197,7 @@ struct ChatView: View {
       .buttonStyle(.plain)
       .accessibilityLabel(model.listening ? "Stop listening" : "Talk")
     }
-    .padding(.leading, 14)
-    .padding(.trailing, 8)
+    .padding(.horizontal, 8)
     .frame(height: Self.inputHeight)
     .background(
       RoundedRectangle(cornerRadius: 12).fill(Palette.field)
@@ -288,6 +304,7 @@ enum Palette {
   static let assistant = Color(rgba: 0x2E2E3EFF)
   static let assistantText = Color(rgba: 0xF4F4F8FF)
   static let problemBorder = Color(rgba: 0xFB7185FF)
+  static let stop = Color(rgba: 0xFB7185FF)
   static let field = Color(rgba: 0x1F1F2CFF)
   static let fieldBorder = Color(rgba: 0x4A4A60FF)
   static let placeholder = Color(rgba: 0x8A8AA0FF)

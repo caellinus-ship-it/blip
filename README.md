@@ -83,6 +83,9 @@ Path to claude.
   can be changed in Settings.
 - Type a question and press Return, or press the mic and talk; nothing is sent until you press
   Return.
+- The square on the left of the text box stops an answer that is on its way; so does Escape while
+  the chat has the keyboard. What has already arrived stays, and Blip still remembers the
+  conversation.
 - Drag the ship anywhere, onto another display too. Everything behind it stays clickable.
 - The sparkles icon in the menu bar has Summon, Settings and Quit.
 

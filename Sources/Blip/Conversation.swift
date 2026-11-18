@@ -10,6 +10,8 @@ import BlipCore
   static let actingTimeout: TimeInterval = 120
   static let screenReply = "Here is my screen. Now answer my question."
   static let closeUpRequest = "Here is a close-up of window %d. Now answer my question."
+  /// Seconds a stopped answer's last lines may take to arrive before the session is replaced.
+  static let stopTimeout: TimeInterval = 10
   static let unclearWindowReply = "I couldn't get a clear look at that window. Try making it bigger and asking again."
 
   /// Whether the ship should show it is thinking.
@@ -22,6 +24,8 @@ import BlipCore
   /// The question ended, once per question: true for a finished answer, false for a problem or a
   /// window that couldn't be seen clearly.
   var onOutcome: ((Bool) -> Void)?
+  /// The owner stopped the answer; `onOutcome` is not called for that question.
+  var onStopped: (() -> Void)?
 
   private let model = ChatModel()
   private let panel: ChatPanel
@@ -39,6 +43,10 @@ import BlipCore
   private var outcomeFor = 0
   /// Replies the session still owes a `result` line for.
   private var pendingResults = 0
+  /// How many of those belong to answers the owner stopped. Until they have arrived, everything the
+  /// session says is the tail of a stopped answer and is dropped.
+  private var staleResults = 0
+  private var staleTimeout: DispatchWorkItem?
   /// Bumped for every question and on close, so late captures and timers from an older one do nothing.
   private var questionNumber = 0
   private var timeout: DispatchWorkItem?
@@ -65,6 +73,7 @@ import BlipCore
     model.onSend = { [weak self] text in self?.send(text) }
     model.onMic = { [weak self] in self?.micPressed() }
     model.onAnswer = { [weak self] allow in self?.answered(allow) }
+    model.onStop = { [weak self] in self?.stop() }
     dictation.onText = { [weak self] spoken in
       guard let self else { return }
       self.model.input = DictationMerge.text(prefix: self.dictationPrefix, dictated: spoken)
@@ -98,10 +107,12 @@ import BlipCore
     closed = true
     questionNumber += 1
     timeout?.cancel()
+    staleTimeout?.cancel()
     dictation.stop()
     model.onSend = nil
     model.onMic = nil
     model.onAnswer = nil
+    model.onStop = nil
     pendingAsk = nil
     model.pendingAsk = nil
     panel.fadeOutAndClose()
@@ -147,6 +158,37 @@ import BlipCore
       pendingResults += 1
       session.send(text: question, jpegs: [], windows: [])
     }
+  }
+
+  /// The stop button or Escape: ends the answer on its way and keeps what has arrived. The session
+  /// is told to stop too, and stays, so it still remembers the conversation. With no answer on its
+  /// way, it stops the microphone instead.
+  private func stop() {
+    guard !closed else { return }
+    guard model.log.waiting else { return dictation.stop() }
+    if let ask = pendingAsk { session?.answer(id: ask.id, allow: false, input: ask.input) }
+    gate = nil
+    model.log.stop()
+    stoppedWaiting()
+    outcomeFor = questionNumber  // a stop is neither a finished answer nor a problem
+    if pendingResults > 0, let session {
+      staleResults = pendingResults
+      session.interrupt()
+      startStaleTimeout(for: session)
+    }
+    onStopped?()
+  }
+
+  /// A session that never ends a stopped answer would mix it into the next one; replace it.
+  private func startStaleTimeout(for session: BrainSession) {
+    staleTimeout?.cancel()
+    let item = DispatchWorkItem { [weak self] in
+      guard let self, !self.closed, self.session === session, self.staleResults > 0 else { return }
+      if self.model.log.waiting { self.fail(.timeout) }
+      self.dropSession()
+    }
+    staleTimeout = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.stopTimeout, execute: item)
   }
 
   /// Captures the display the ship is on and sends `text` with it and the window list.
@@ -214,6 +256,9 @@ import BlipCore
 
   private func adopt(_ session: BrainSession?) {
     pendingResults = 0
+    staleResults = 0
+    staleTimeout?.cancel()
+    staleTimeout = nil
     gate = nil
     session?.onEvent = { [weak self] event in
       MainActor.assumeIsolated { self?.handle(event) }
@@ -225,6 +270,23 @@ import BlipCore
 
   private func handle(_ event: BrainEvent) {
     guard !closed else { return }
+    if staleResults > 0 {
+      // The tail of an answer the owner stopped. A question asked since then is answered after it.
+      switch event {
+      case .result:
+        pendingResults = max(0, pendingResults - 1)
+        staleResults -= 1
+        if staleResults == 0 {
+          staleTimeout?.cancel()
+          staleTimeout = nil
+        }
+      case .ask(let id, _, let input):
+        session?.answer(id: id, allow: false, input: input)
+      default:
+        break
+      }
+      return
+    }
     switch event {
     case .textDelta(let delta):
       guard gate != nil else { return }

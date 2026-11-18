@@ -1,5 +1,6 @@
 import AppKit
 import BlipCore
+import Carbon.HIToolbox
 import SwiftUI
 
 /// The floating chat beside the ship. A non-activating panel that can still become key, so
@@ -58,6 +59,10 @@ final class ChatPanel: NSPanel {
   /// A click anywhere on the chat takes the keyboard back. Without this the first click after
   /// working in another app could land without the panel becoming key, so no cursor showed.
   override func sendEvent(_ event: NSEvent) {
+    if isStopKey(event) {
+      model.onStop?()
+      return
+    }
     if event.type == .leftMouseDown && !isKeyWindow { makeKey() }
     super.sendEvent(event)
     // A click on the text box while something else in the chat held the focus.
@@ -66,6 +71,16 @@ final class ChatPanel: NSPanel {
       makeFirstResponder(box)
       putCursorAtEnd(of: box)
     }
+  }
+
+  /// Escape alone, while there is something to stop. Left alone while an input method is composing,
+  /// where Escape cancels the composition, and when there is nothing to stop.
+  private func isStopKey(_ event: NSEvent) -> Bool {
+    guard event.type == .keyDown, Int(event.keyCode) == kVK_Escape,
+          event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .function, .numericPad]).isEmpty,
+          model.canStop
+    else { return false }
+    return !((firstResponder as? NSTextView)?.hasMarkedText() ?? false)
   }
 
   private var textBox: NSTextField? {

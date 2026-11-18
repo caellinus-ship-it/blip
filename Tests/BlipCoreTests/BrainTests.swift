@@ -139,4 +139,14 @@ import Testing
     var g = ReplyGate(windowCount: 0, allowLook: false, allowScreen: true); _ = g.feed("LOOK:0"); #expect(g.finish() == .look(0))
     var h = ReplyGate(windowCount: 3, allowLook: true); _ = h.feed("LOOK:0"); #expect(h.finish() == .unusableMarker)
   }
+  @Test func stopRequestIsAnInterruptOnOneLine() throws {
+    let line = StopRequest.line(id: "stop-1")
+    #expect(!line.contains("\n"))
+    let obj = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+    #expect(obj["type"] as? String == "control_request")
+    #expect(obj["request_id"] as? String == "stop-1")
+    #expect((obj["request"] as? [String: Any])?["subtype"] as? String == "interrupt")
+    #expect(StopRequest.line() != StopRequest.line())  // each request gets its own id
+    #expect(StreamParser.parse(line: #"{"type":"control_response","response":{"subtype":"success","request_id":"stop-1"}}"#) == .other)
+  }
 }

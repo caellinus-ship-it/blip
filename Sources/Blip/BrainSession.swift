@@ -119,6 +119,15 @@ final class BrainSession {
     }
   }
 
+  /// Asks the session to stop the answer it is giving. It stays alive and keeps the conversation.
+  func interrupt() {
+    guard !stopped else { return }
+    let handle = input.fileHandleForWriting
+    writeQueue.async {
+      try? handle.write(contentsOf: Data((StopRequest.line() + "\n").utf8))
+    }
+  }
+
   /// Closes stdin and terminates the process, escalating to SIGKILL if it lingers. No events follow.
   func stop() {
     guard !stopped else { return }

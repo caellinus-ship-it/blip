@@ -1,10 +1,13 @@
 import AppKit
 import BlipCore
 
-// `Blip --brain-check "<question>" [--image <path.jpg>] [--capture] [--kill-after <seconds>]`:
+// `Blip --brain-check "<question>" [--image <path.jpg>] [--capture] [--kill-after <seconds>]
+// [--stop-after <seconds>]`:
 // asks the hidden session one question with no UI, prints each event, then exits.
 // `--capture` sends a fresh capture of the main display and its window list with the question.
 // `--kill-after` kills the `claude` child (not Blip) that many seconds after the question is sent.
+// `--stop-after` asks the session to stop its answer that many seconds after the question is sent, then
+// asks "What did I just ask you?" to show it still remembers.
 if CommandLine.arguments.contains("--brain-check") {
   MainActor.assumeIsolated { BrainCheck.run(CommandLine.arguments) }
 }
@@ -35,7 +38,7 @@ app.run()
       return arguments[i + 1]
     }
     guard let question = value(after: "--brain-check") else {
-      fail("usage: Blip --brain-check \"<question>\" [--image <path.jpg>] [--capture] [--kill-after <seconds>]")
+      fail("usage: Blip --brain-check \"<question>\" [--image <path.jpg>] [--capture] [--kill-after <seconds>] [--stop-after <seconds>]")
     }
     var jpegs: [Data] = []
     if let path = value(after: "--image") {
@@ -43,6 +46,10 @@ app.run()
       jpegs.append(jpeg)
     }
     let killAfter = value(after: "--kill-after").flatMap(Double.init)
+    let stopAfter = value(after: "--stop-after").flatMap(Double.init)
+    // With `--stop-after`: results still to come before the check ends (the stopped answer's, then the follow-up's).
+    var resultsLeft = stopAfter == nil ? 1 : 2
+    var stopSent = false
     let capture = arguments.contains("--capture")
     if capture && !ScreenCapturer.hasPermission {
       ScreenCapturer.requestPermission()
@@ -73,7 +80,12 @@ app.run()
     session.onEvent = { event in
       say(String(describing: event))
       switch event {
-      case .messageDone, .result: finish(0)
+      case .messageDone where stopAfter == nil: finish(0)
+      case .ask(let id, _, let input): session.answer(id: id, allow: false, input: input)
+      case .result:
+        resultsLeft -= 1
+        if resultsLeft == 0 { finish(0) }
+        if stopAfter != nil && !stopSent { finish(0) }  // the answer ended before the stop was due
       default: break
       }
     }
@@ -83,6 +95,14 @@ app.run()
     }
     func ask(jpegs: [Data], windows: [WindowInfo]) {
       session.send(text: question, jpegs: jpegs, windows: windows)
+      if let stopAfter {
+        DispatchQueue.main.asyncAfter(deadline: .now() + stopAfter) {
+          say("STOP")
+          stopSent = true
+          session.interrupt()
+          session.send(text: "What did I just ask you?", jpegs: [], windows: [])
+        }
+      }
       if let killAfter {
         DispatchQueue.main.asyncAfter(deadline: .now() + killAfter) {
           if session.isRunning { kill(session.processIdentifier, SIGKILL) }

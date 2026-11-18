@@ -27,6 +27,26 @@ import Testing
     log.fail(.timeout); #expect(log.messages.last?.role == .problem); #expect(!log.waiting)
     #expect(log.messages.last?.text == "That took too long. Try asking again.")
   }
+  @Test func stopKeepsWhatArrivedAndEndsTheWait() {
+    var log = ChatLog(); _ = log.submit("hi"); log.append(delta: "Hel")
+    log.stop()
+    #expect(!log.waiting)
+    #expect(log.messages.map(\.role) == [.user, .assistant, .note])
+    #expect(log.messages[1].text == "Hel" && log.messages[2].text == ChatLog.stoppedNote)
+    log.append(delta: "lo"); #expect(log.messages[1].text == "Hel")  // late words are not shown
+    let next = log.submit("next"); #expect(next)
+  }
+  @Test func stopBeforeAnyWordsLeavesJustTheNote() {
+    var log = ChatLog(); _ = log.submit("hi"); #expect(log.awaitingFirstText)
+    log.stop()
+    #expect(!log.awaitingFirstText && !log.betweenBubbles)
+    #expect(log.messages.map(\.role) == [.user, .note])
+  }
+  @Test func stopWithNothingOnItsWayDoesNothing() {
+    var log = ChatLog(); log.stop(); #expect(log.messages.isEmpty)
+    _ = log.submit("hi"); log.append(delta: "Hi"); log.finish(); log.stop()
+    #expect(log.messages.count == 2)
+  }
   @Test func typingDotsShowUntilTheFirstWords() {
     var log = ChatLog()
     #expect(!log.awaitingFirstText)

@@ -55,6 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         summon?.react(ok ? .happy : .startled)
         if !ok { sounds.play(Chiptune.oops) }
       }
+      conversation.onStopped = { [weak self, weak summon, weak conversation] in
+        guard let conversation, self?.conversation === conversation else { return }
+        summon?.stopReading()
+      }
       self.conversation = conversation
       SummonTiming.log(String(format: "summon: chat ready %.1f ms after the shortcut",
                               (CACurrentMediaTime() - (summon?.pressedAt ?? 0)) * 1000))
