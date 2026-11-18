@@ -19,7 +19,8 @@ public enum ImageSizing {
 
 /// One bubble in the chat.
 public struct ChatMessage: Identifiable, Equatable {
-  public enum Role { case user, assistant, problem }
+  /// `note` is a small line about something the assistant did or was not allowed to do.
+  public enum Role { case user, assistant, problem, note }
 
   public let id: UUID
   public var role: Role
@@ -67,11 +68,15 @@ public struct ChatLog {
   public private(set) var waiting = false
   /// Where the current reply's text goes, once its first words have arrived.
   private var replyIndex: Int?
+  /// Some of the current answer has been shown, in a bubble a note has since closed.
+  private var hadReply = false
 
   public init() {}
 
   /// Waiting, with no words of the reply shown yet: the time for the typing dots.
-  public var awaitingFirstText: Bool { waiting && replyIndex == nil }
+  public var awaitingFirstText: Bool { waiting && replyIndex == nil && !hadReply }
+  /// Waiting with nothing streaming into a bubble right now.
+  public var betweenBubbles: Bool { waiting && replyIndex == nil }
 
   /// Adds the owner's question, trimmed. Does nothing and returns false when it is empty or
   /// a reply is still on its way.
@@ -81,6 +86,7 @@ public struct ChatLog {
     messages.append(ChatMessage(role: .user, text: trimmed))
     waiting = true
     replyIndex = nil
+    hadReply = false
     return true
   }
 
@@ -99,12 +105,22 @@ public struct ChatLog {
   public mutating func finish() {
     waiting = false
     replyIndex = nil
+    hadReply = false
   }
 
   /// Ends any wait with a problem bubble.
   public mutating func fail(_ problem: BlipProblem) {
     note(problem)
     finish()
+  }
+
+  /// Adds a small line about an action. Text that follows it starts a new reply bubble.
+  public mutating func remark(_ text: String) {
+    messages.append(ChatMessage(role: .note, text: text))
+    if waiting {
+      if replyIndex != nil { hadReply = true }
+      replyIndex = nil
+    }
   }
 
   /// Adds a problem bubble that has nothing to do with the question, if any, still being answered;

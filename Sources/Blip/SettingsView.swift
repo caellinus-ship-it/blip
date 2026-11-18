@@ -173,6 +173,17 @@ struct SettingsView: View {
     }
   }
 
+  private var askFirstCaption: String {
+    switch store.settings.askFirst {
+    case .anyChange:
+      return "It can work with files, run commands, browse and use your Gmail and Drive. Reading never asks; every change waits for your OK."
+    case .riskyOnly:
+      return "New files, drafts and web pages happen straight away. Overwriting, deleting, sending, commands and reading outside Desktop, Documents and Downloads still ask."
+    case .never:
+      return "It acts without asking. An email, file or web page it reads could trick it into doing something you didn't ask for."
+    }
+  }
+
   private var assistant: some View {
     SettingsPanel(title: "Assistant") {
       SettingRow(label: "Personality") {
@@ -187,6 +198,23 @@ struct SettingsView: View {
       }
       SettingRow(label: "Answers") {
         segmented("Answers", settings.answers, [(.short, "Short"), (.detailed, "Detailed")])
+      }
+      SettingRow(label: "Use my Mac") {
+        Toggle("Use my Mac", isOn: settings.actions)
+          .toggleStyle(.switch)
+          .labelsHidden()
+          .accessibilityLabel("Use my Mac")
+      }
+      if store.settings.actions {
+        SettingRow(label: "Ask first") {
+          segmented(
+            "Ask first", settings.askFirst,
+            [(.anyChange, "Any change"), (.riskyOnly, "Risky only"), (.never, "Never")])
+        }
+        Text(askFirstCaption)
+          .font(.system(size: 11))
+          .foregroundStyle(store.settings.askFirst == .never ? Color(red: 0.98, green: 0.44, blue: 0.52) : SettingsTheme.text.opacity(0.6))
+          .fixedSize(horizontal: false, vertical: true)
       }
       SettingRow(label: "Brain") {
         segmented("Brain", settings.model, [(.fastest, "Fastest"), (.smarter, "Smarter")])

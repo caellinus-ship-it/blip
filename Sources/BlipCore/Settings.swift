@@ -72,6 +72,9 @@ public enum FlightSpeed: String, Codable, CaseIterable {
 /// What glows around the creature while it hovers.
 public enum AuraStyle: String, Codable, CaseIterable { case rings, sparkles, halo, off }
 
+/// When the assistant must stop and ask before it acts on the Mac.
+public enum AskPolicy: String, Codable, CaseIterable { case anyChange, riskyOnly, never }
+
 /// Everything the user can change. Decoding fills any missing key with its default,
 /// so settings saved by an older version still load.
 public struct BlipSettings: Codable, Equatable {
@@ -94,6 +97,9 @@ public struct BlipSettings: Codable, Equatable {
   public var answers = AnswerLength.short
   public var model = BrainModel.fastest
   public var sounds = true
+  /// The assistant may act on the Mac: files, commands, the web, connected mail and drive.
+  public var actions = true
+  public var askFirst = AskPolicy.anyChange
   public var hotKey = HotKey.commandEscape
   public var launchAtLogin = true
   /// The `claude` executable to run; `nil` means find it automatically.
@@ -127,6 +133,8 @@ public struct BlipSettings: Codable, Equatable {
     answers = try c.decodeIfPresent(AnswerLength.self, forKey: .answers) ?? d.answers
     model = try c.decodeIfPresent(BrainModel.self, forKey: .model) ?? d.model
     sounds = try c.decodeIfPresent(Bool.self, forKey: .sounds) ?? d.sounds
+    actions = try c.decodeIfPresent(Bool.self, forKey: .actions) ?? d.actions
+    askFirst = try c.decodeIfPresent(AskPolicy.self, forKey: .askFirst) ?? d.askFirst
     hotKey = try c.decodeIfPresent(HotKey.self, forKey: .hotKey) ?? d.hotKey
     launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
     claudePath = try c.decodeIfPresent(String.self, forKey: .claudePath) ?? d.claudePath

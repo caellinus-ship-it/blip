@@ -129,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if new.hotKey != old.hotKey { hotKeys?.update(new.hotKey) }
     if new.launchAtLogin != old.launchAtLogin { LoginItem.set(new.launchAtLogin) }
     if new.name != old.name || new.personality != old.personality || new.answers != old.answers
-      || new.model != old.model || new.claudePath != old.claudePath {
+      || new.model != old.model || new.claudePath != old.claudePath || new.actions != old.actions {
       brainRestart?.cancel()
       let restart = DispatchWorkItem { [weak self] in
         self?.brainRestart = nil

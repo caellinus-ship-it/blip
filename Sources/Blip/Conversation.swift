@@ -6,6 +6,8 @@ import BlipCore
 @MainActor final class Conversation {
   /// Seconds a question may go without any reply text before it fails as `.timeout`.
   static let replyTimeout: TimeInterval = 30
+  /// Seconds an assistant that may act can go quiet (a slow command, a mail search) before that.
+  static let actingTimeout: TimeInterval = 120
   static let closeUpRequest = "Here is a close-up of window %d. Now answer my question."
   static let unclearWindowReply = "I couldn't get a clear look at that window. Try making it bigger and asking again."
 
@@ -30,6 +32,14 @@ import BlipCore
   private var questionNumber = 0
   private var timeout: DispatchWorkItem?
   private var closed = false
+  private let settings: BlipSettings
+  private let home = NSHomeDirectory()
+  /// The message that is ending stopped to use a tool, so its end is not the answer's end.
+  private var toolPending = false
+  /// Reply text after a tool was used starts a new paragraph.
+  private var breakBeforeNextText = false
+  /// The tool request waiting on the owner's Allow or Don't.
+  private var pendingAsk: (id: String, input: String, summary: String)?
   private let dictation = Dictation()
   /// What the text box held when the mic was pressed; spoken words go after it.
   private var dictationPrefix = ""
@@ -37,11 +47,13 @@ import BlipCore
   init(pool: BrainPool, settings: BlipSettings, screen: NSScreen) {
     self.pool = pool
     self.screen = screen
+    self.settings = settings
     panel = ChatPanel(model: model, name: settings.displayName, bubbleColor: settings.bubbleColor)
     session = pool.take()
     adopt(session)
     model.onSend = { [weak self] text in self?.send(text) }
     model.onMic = { [weak self] in self?.micPressed() }
+    model.onAnswer = { [weak self] allow in self?.answered(allow) }
     dictation.onText = { [weak self] spoken in
       guard let self else { return }
       self.model.input = DictationMerge.text(prefix: self.dictationPrefix, dictated: spoken)
@@ -78,6 +90,9 @@ import BlipCore
     dictation.stop()
     model.onSend = nil
     model.onMic = nil
+    model.onAnswer = nil
+    pendingAsk = nil
+    model.pendingAsk = nil
     panel.fadeOutAndClose()
     if let session { pool.release(session) }
     session = nil
@@ -98,6 +113,8 @@ import BlipCore
     model.input = ""
     questionNumber += 1
     let number = questionNumber
+    toolPending = false
+    breakBeforeNextText = false
 
     // A session that died while idle was dropped; start one now, at most once per question.
     if session == nil {
@@ -152,13 +169,16 @@ import BlipCore
   private func startTimeout(for number: Int) {
     timeout?.cancel()
     let item = DispatchWorkItem { [weak self] in
-      guard let self, !self.closed, number == self.questionNumber, self.model.log.awaitingFirstText else { return }
+      guard let self, !self.closed, number == self.questionNumber, self.pendingAsk == nil,
+            self.settings.actions ? self.model.log.waiting : self.model.log.awaitingFirstText
+      else { return }
       self.fail(.timeout)
       // The late reply would land on the next question; the next one gets a fresh session.
       self.dropSession()
     }
     timeout = item
-    DispatchQueue.main.asyncAfter(deadline: .now() + Self.replyTimeout, execute: item)
+    let seconds = settings.actions ? Self.actingTimeout : Self.replyTimeout
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: item)
   }
 
   // MARK: Replies
@@ -181,8 +201,17 @@ import BlipCore
       guard gate != nil else { return }
       let shown = gate!.feed(delta)
       show(shown)
+    case .toolPause:
+      toolPending = true
     case .messageDone:
-      replyEnded()
+      if toolPending {
+        toolPending = false
+        pausedForTool()
+      } else {
+        replyEnded()
+      }
+    case .ask(let id, let tool, let input):
+      asked(id: id, tool: tool, input: input)
     case .result(let text, let isError):
       pendingResults = max(0, pendingResults - 1)
       if isError && model.log.waiting {
@@ -206,9 +235,56 @@ import BlipCore
     }
   }
 
+  /// A message ended so the assistant could use a tool: show what was held back and keep waiting.
+  private func pausedForTool() {
+    guard var g = gate else { return }
+    if case .text(let rest) = g.finish() { show(rest) }
+    // The window close-up marker only makes sense as a whole first reply.
+    gate = ReplyGate(windowCount: 0, allowLook: false)
+    breakBeforeNextText = true
+    if model.log.waiting && pendingAsk == nil { startTimeout(for: questionNumber) }
+  }
+
+  /// The session wants to use a tool: let it, or put the question to the owner.
+  private func asked(id: String, tool: String, input: String) {
+    guard let session else { return }
+    guard model.log.waiting else { return session.answer(id: id, allow: false, input: input) }
+    let fields = (input.data(using: .utf8)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
+    let exists = FileManager.default.fileExists(atPath:)
+    let kind = ActionRules.kind(tool: tool, input: fields, home: home, exists: exists)
+    let summary = ActionRules.summary(tool: tool, input: fields, home: home, exists: exists)
+    if ActionRules.needsAsk(kind, policy: settings.askFirst) {
+      pendingAsk = (id, input, summary)
+      model.pendingAsk = summary
+      timeout?.cancel()
+      onThinkingChanged?(false)
+    } else {
+      session.answer(id: id, allow: true, input: input)
+      if kind != .read { model.log.remark("Did: " + summary) }
+      startTimeout(for: questionNumber)
+    }
+  }
+
+  /// The owner pressed Allow or Don't.
+  private func answered(_ allow: Bool) {
+    guard !closed, let ask = pendingAsk else { return }
+    pendingAsk = nil
+    model.pendingAsk = nil
+    session?.answer(id: ask.id, allow: allow, input: ask.input)
+    model.log.remark((allow ? "Allowed: " : "Skipped: ") + ask.summary)
+    guard model.log.waiting else { return }
+    onThinkingChanged?(true)
+    startTimeout(for: questionNumber)
+  }
+
   /// Adds reply text to the panel, telling `onReplyStarted` when it is the answer's first.
   private func show(_ text: String) {
     guard !text.isEmpty else { return }
+    var text = text
+    if breakBeforeNextText {
+      breakBeforeNextText = false
+      if !model.log.betweenBubbles { text = "\n\n" + text }
+    }
     let first = model.log.awaitingFirstText
     model.log.append(delta: text)
     if first && !model.log.awaitingFirstText { onReplyStarted?() }
@@ -227,6 +303,9 @@ import BlipCore
   }
 
   private func stoppedWaiting() {
+    pendingAsk = nil
+    model.pendingAsk = nil
+    toolPending = false
     timeout?.cancel()
     timeout = nil
     onThinkingChanged?(false)

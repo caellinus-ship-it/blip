@@ -10,6 +10,10 @@ import SwiftUI
   /// Enter was pressed in the text box; carries the box's text.
   var onSend: ((String) -> Void)?
   var onMic: (() -> Void)?
+  /// What the assistant is waiting for permission to do, in plain words; `nil` when nothing.
+  @Published var pendingAsk: String?
+  /// The owner pressed Allow (true) or Don't (false) on the pending question.
+  var onAnswer: ((Bool) -> Void)?
 }
 
 /// The texting-style chat beside the ship: bubbles above, the text box with its mic below.
@@ -70,7 +74,11 @@ struct ChatView: View {
       ScrollView(.vertical, showsIndicators: false) {
         VStack(spacing: 8) {
           ForEach(model.log.messages) { bubble($0) }
-          if model.log.awaitingFirstText { TypingBubble().frame(maxWidth: .infinity, alignment: .leading) }
+          if let ask = model.pendingAsk {
+            confirmBubble(ask)
+          } else if model.log.betweenBubbles {
+            TypingBubble().frame(maxWidth: .infinity, alignment: .leading)
+          }
           Color.clear.frame(height: 0).id(Self.bottomID)
         }
         .background(GeometryReader { g in
@@ -81,14 +89,51 @@ struct ChatView: View {
       .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
       .onChange(of: model.log.messages) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
       .onChange(of: contentHeight) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+      .onChange(of: model.pendingAsk) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
     }
   }
 
   private static let bottomID = "bottom"
   static let space = "chat"
 
+  /// The assistant wants to act: what it will do, with Allow and Don't.
+  private func confirmBubble(_ ask: String) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Can I do this?").fontWeight(.semibold)
+      Text(ask)
+      HStack(spacing: 8) {
+        Button("Allow") { model.onAnswer?(true) }
+          .buttonStyle(.plain)
+          .padding(.horizontal, 14)
+          .padding(.vertical, 5)
+          .background(RoundedRectangle(cornerRadius: 8).fill(bubbleColor))
+          .foregroundStyle(Color.white)
+        Button("Don't") { model.onAnswer?(false) }
+          .buttonStyle(.plain)
+          .padding(.horizontal, 14)
+          .padding(.vertical, 5)
+          .background(RoundedRectangle(cornerRadius: 8).fill(Palette.fieldBorder))
+          .foregroundStyle(Palette.assistantText)
+      }
+    }
+    .modifier(BubbleStyle(fill: Palette.assistant, textColor: Palette.assistantText, side: .leading,
+                          border: bubbleColor))
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
   @ViewBuilder private func bubble(_ message: ChatMessage) -> some View {
     switch message.role {
+    case .note:
+      Text(message.text)
+        .font(.system(size: 11))
+        .foregroundStyle(Palette.assistantText.opacity(0.75))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.field))
+        .reportsBubbleRect()
+        .frame(maxWidth: 280, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     case .user:
       Text(message.text)
         .modifier(BubbleStyle(fill: bubbleColor, textColor: .white, side: .trailing))

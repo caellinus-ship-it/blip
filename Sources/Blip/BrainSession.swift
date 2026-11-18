@@ -44,8 +44,12 @@ final class BrainSession {
     try? FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
 
     process.executableURL = URL(fileURLWithPath: claude)
-    process.arguments = BrainCommand.arguments(model: settings.model,
-                                               systemPrompt: PromptBuilder.systemPrompt(settings))
+    // A session that may act gets the folders that exist; one that may not gets none, and no tools.
+    let folders = settings.actions
+      ? ActionRules.folders(home: home).filter { FileManager.default.fileExists(atPath: $0) } : []
+    process.arguments = BrainCommand.arguments(
+      model: settings.model, systemPrompt: PromptBuilder.systemPrompt(settings, home: folders.isEmpty ? nil : home),
+      actingIn: folders)
     process.currentDirectoryURL = workDir
     process.environment = environment
     process.standardInput = input
@@ -103,6 +107,15 @@ final class BrainSession {
     writeQueue.async {
       let line = Data((UserMessage.line(text: text, jpegs: jpegs, windows: windows) + "\n").utf8)
       try? handle.write(contentsOf: line)
+    }
+  }
+
+  /// Answers the session's request to use a tool; `input` is the request's input, unchanged.
+  func answer(id: String, allow: Bool, input: String) {
+    guard !stopped else { return }
+    let handle = self.input.fileHandleForWriting
+    writeQueue.async {
+      try? handle.write(contentsOf: Data((PermissionReply.line(id: id, allow: allow, input: input) + "\n").utf8))
     }
   }
 
