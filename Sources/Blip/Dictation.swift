@@ -1,5 +1,5 @@
-import AVFoundation
-import Speech
+@preconcurrency import AVFoundation
+@preconcurrency import Speech
 
 /// Turns the owner's speech into text while the mic is on, on this Mac only (never Apple's servers).
 /// Each result is the whole transcript so far; nothing is ever sent from here.
@@ -28,6 +28,10 @@ import Speech
   /// Bumped on every start and stop, so late permission answers and results of an older listen do nothing.
   private var generation = 0
 
+  /// Starting and stopping the audio engine takes tens of milliseconds, so it happens here, never on the
+  /// main thread and its 60 Hz animation; in order, so a stop always comes after the start before it.
+  nonisolated private static let audioQueue = DispatchQueue(label: "com.blip.assistant.dictation")
+
   func toggle() {
     if isListening { stop() } else { start() }
   }
@@ -39,10 +43,7 @@ import Speech
     generation += 1
     silenceTimer?.cancel()
     silenceTimer = nil
-    if let engine {
-      engine.stop()
-      engine.inputNode.removeTap(onBus: 0)
-    }
+    if let engine { Self.release(engine) }
     engine = nil
     request?.endAudio()
     request = nil
@@ -69,23 +70,30 @@ import Speech
     guard let recognizer = SFSpeechRecognizer(), recognizer.supportsOnDeviceRecognition, recognizer.isAvailable
     else { return refuse("no on-device speech recognition for \(Locale.current.identifier)") }
 
-    let engine = AVAudioEngine()
-    let input = engine.inputNode
-    let format = input.outputFormat(forBus: 0)
-    guard format.sampleRate > 0, format.channelCount > 0 else { return refuse("no usable input device") }
-
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.requiresOnDeviceRecognition = true
     request.shouldReportPartialResults = true
-    input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.feeding(request))
-    engine.prepare()
-    do {
-      try engine.start()
-    } catch {
-      input.removeTap(onBus: 0)
-      return refuse("the audio engine did not start: \(error.localizedDescription)")
+    Self.audioQueue.async { [weak self] in
+      let started = Self.startEngine(feeding: request)
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          // A listen stopped, or a conversation closed, while the engine started: let go of the mic.
+          guard let self, self.isListening, self.generation == number else {
+            if case .success(let engine) = started { Self.release(engine) }
+            return
+          }
+          switch started {
+          case .success(let engine): self.listen(engine: engine, recognizer: recognizer, request: request, number)
+          case .failure(let failure): self.refuse(failure.reason)
+          }
+        }
+      }
     }
+  }
 
+  /// The engine is running and feeding `request`: recognition starts.
+  private func listen(engine: AVAudioEngine, recognizer: SFSpeechRecognizer,
+                      request: SFSpeechAudioBufferRecognitionRequest, _ number: Int) {
     self.recognizer = recognizer
     self.engine = engine
     self.request = request
@@ -124,6 +132,37 @@ import Speech
   }
 
   // MARK: Off the main actor
+
+  private struct EngineFailure: Error { let reason: String }
+
+  /// On the audio queue: an engine started on the default input, its audio going to `request`.
+  nonisolated private static func startEngine(
+    feeding request: SFSpeechAudioBufferRecognitionRequest
+  ) -> Result<AVAudioEngine, EngineFailure> {
+    let engine = AVAudioEngine()
+    let input = engine.inputNode
+    let format = input.outputFormat(forBus: 0)
+    guard format.sampleRate > 0, format.channelCount > 0 else {
+      return .failure(EngineFailure(reason: "no usable input device"))
+    }
+    input.installTap(onBus: 0, bufferSize: 1024, format: format, block: feeding(request))
+    engine.prepare()
+    do {
+      try engine.start()
+    } catch {
+      input.removeTap(onBus: 0)
+      return .failure(EngineFailure(reason: "the audio engine did not start: \(error.localizedDescription)"))
+    }
+    return .success(engine)
+  }
+
+  /// Stops `engine` on the audio queue, which releases the microphone.
+  nonisolated private static func release(_ engine: AVAudioEngine) {
+    audioQueue.async {
+      engine.stop()
+      engine.inputNode.removeTap(onBus: 0)
+    }
+  }
 
   /// Asks for the Microphone, then Speech Recognition, each only the first time; true when both are allowed.
   nonisolated private static func requestPermissions() async -> Bool {

@@ -91,4 +91,10 @@ import Testing
     var f = ReplyGate(windowCount: 3, allowLook: true); _ = f.feed("LOO"); #expect(f.finish() == .text("LOO"))
     var e = ReplyGate(windowCount: 3, allowLook: true); _ = e.feed("LOOK:2 please"); #expect(e.finish() == .text(""))
   }
+  @Test func promptOffersACloseUpForAQuestionAboutOneWindow() {
+    let p = PromptBuilder.systemPrompt(BlipSettings())
+    #expect(p.contains("or the question is about one specific window in the list"))
+    #expect(p.contains("If you cannot read something because one window is too small or blurry in the screenshot, "
+      + "or the question is about one specific window in the list, reply with exactly LOOK:<number>"))
+  }
 }

@@ -61,4 +61,7 @@ import Testing
     #expect(ChatLayout.frame(anchor: CGPoint(x: 500, y: 790), shipHalfWidth: 36, panel: panel, screen: screen).maxY == 788)
     #expect(ChatLayout.frame(anchor: CGPoint(x: 500, y: 5), shipHalfWidth: 36, panel: panel, screen: screen).minY == 12)
   }
+  @Test func missingToolPointsAtTheSettingThatExists() {
+    #expect(BlipProblem.toolMissing.bubbleText == "I can't find the claude tool. Set the path to claude in Settings.")
+  }
 }

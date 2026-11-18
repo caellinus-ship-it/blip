@@ -24,6 +24,8 @@ struct OnboardingView: View {
   var onDone: () -> Void
 
   @State private var screenAllowed = ScreenCapturer.hasPermission
+  /// Start at login as macOS has it, as in Settings.
+  @State private var loginOn = LoginItem.isOn
   /// The macOS prompt shows only once; after that, Turn on opens the page in System Settings.
   @State private var askedForScreen = false
 
@@ -52,7 +54,7 @@ struct OnboardingView: View {
         }
         Spacer(minLength: 0)
         HStack {
-          Toggle("Start at login", isOn: $store.settings.launchAtLogin)
+          Toggle("Start at login", isOn: LoginItem.switchBinding(store: store, shown: $loginOn))
             .toggleStyle(.switch)
             .accessibilityLabel("Start at login")
             .tint(accent)
@@ -72,6 +74,7 @@ struct OnboardingView: View {
     .preferredColorScheme(.dark)
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
       screenAllowed = ScreenCapturer.hasPermission
+      loginOn = LoginItem.isOn  // the owner may have changed it in System Settings
     }
   }
 

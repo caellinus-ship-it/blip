@@ -1,6 +1,7 @@
 import AppKit
 import BlipCore
 import ServiceManagement
+import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem?
@@ -164,6 +165,20 @@ enum LoginItem {
 
   /// macOS holds the login item until the owner allows it in System Settings.
   static var needsApproval: Bool { SMAppService.mainApp.status == .requiresApproval }
+
+  /// The Start at login switch, in Settings and in the welcome alike. It shows what macOS has (`isOn`,
+  /// held in `shown`); turning it changes the setting, or, when the setting already says so but macOS
+  /// disagrees, asks macOS again. Afterwards `shown` is read from macOS again and `refreshed` runs.
+  @MainActor static func switchBinding(store: SettingsStore, shown: Binding<Bool>,
+                                       refreshed: @escaping () -> Void = {}) -> Binding<Bool> {
+    Binding(
+      get: { shown.wrappedValue },
+      set: { on in
+        if store.settings.launchAtLogin == on { set(on) } else { store.settings.launchAtLogin = on }
+        shown.wrappedValue = isOn
+        refreshed()
+      })
+  }
 
   /// Set once registration has been made to match the setting, so a later launch never undoes a
   /// change the owner made in System Settings.

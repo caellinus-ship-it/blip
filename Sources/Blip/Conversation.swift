@@ -113,10 +113,11 @@ import BlipCore
     startTimeout(for: number)
 
     let question = model.log.messages.last?.text ?? text
-    let screen = self.screen
+    let displayID = screen.displayID
     Task { @MainActor [weak self] in
       do {
-        let shot = try await ScreenCapturer.captureDisplay(screen)
+        guard let displayID else { throw CaptureError.displayNotFound }
+        let shot = try await ScreenCapturer.captureDisplay(displayID)
         guard let self, self.isCurrent(number, session) else { return }
         self.windows = shot.windows
         self.gate = ReplyGate(windowCount: min(shot.windows.count, WindowList.limit), allowLook: true)

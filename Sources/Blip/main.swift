@@ -93,7 +93,8 @@ app.run()
     if capture {
       Task { @MainActor in
         do {
-          let shot = try await ScreenCapturer.captureDisplay(NSScreen.main ?? NSScreen.screens[0])
+          let screen = NSScreen.main ?? NSScreen.screens[0]
+          let shot = try await ScreenCapturer.captureDisplay(screen.displayID ?? CGMainDisplayID())
           say("captured \(shot.jpeg.count) bytes, \(shot.windows.count) windows")
           ask(jpegs: jpegs + [shot.jpeg], windows: shot.windows)
         } catch {
@@ -130,14 +131,14 @@ app.run()
       print("requested Screen Recording; allow Blip in System Settings > Privacy & Security, then run again")
       exit(1)
     }
-    guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+    guard let displayID = (NSScreen.main ?? NSScreen.screens.first)?.displayID else {
       print("no display")
       exit(1)
     }
     Task { @MainActor in
       do {
         let start = DispatchTime.now()
-        let capture = try await ScreenCapturer.captureDisplay(screen)
+        let capture = try await ScreenCapturer.captureDisplay(displayID)
         let ms = (DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
         print("display: \(describe(capture.jpeg)) in \(ms) ms")
         print("windows: \(capture.windows.count)")

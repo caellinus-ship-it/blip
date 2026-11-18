@@ -16,6 +16,8 @@ final class SoundPlayer: @unchecked Sendable {
   private let queue = DispatchQueue(label: "com.blip.assistant.sound")
   private var engine: AVAudioEngine?
   private var player: AVAudioPlayerNode?
+  /// Watches the engine for an output device change, which stops it.
+  private var configurationObserver: NSObjectProtocol?
   /// Bumped for every effect started, so the end of one that was cut off stops nothing.
   private var generation = 0
 
@@ -44,6 +46,12 @@ final class SoundPlayer: @unchecked Sendable {
     buffer.frameLength = buffer.frameCapacity
     samples.withUnsafeBufferPointer { buffer.floatChannelData![0].update(from: $0.baseAddress!, count: $0.count) }
 
+    // Checked again just before playing: the output device may have changed while the samples were
+    // made, and a player can't play on a stopped engine. The effect is dropped then.
+    guard let engine, engine.isRunning, self.player === player else {
+      stopEngine()
+      return Self.log("sound: the output changed; effect dropped")
+    }
     generation += 1
     let number = generation
     player.stop()  // the effect still playing, if any, ends here
@@ -81,6 +89,16 @@ final class SoundPlayer: @unchecked Sendable {
     }
     self.engine = engine
     self.player = player
+    // A device change stops the engine; it is dropped, and the next effect starts a new one.
+    configurationObserver = NotificationCenter.default.addObserver(
+      forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+    ) { [weak self, weak engine] _ in
+      self?.queue.async {
+        guard let self, let engine, self.engine === engine else { return }
+        self.stopEngine()
+        Self.log("sound: the output changed; engine dropped")
+      }
+    }
     return player
   }
 
@@ -92,6 +110,8 @@ final class SoundPlayer: @unchecked Sendable {
   }
 
   private func stopEngine() {
+    if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+    configurationObserver = nil
     player?.stop()
     engine?.stop()
     player = nil

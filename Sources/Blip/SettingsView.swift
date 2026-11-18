@@ -319,15 +319,8 @@ struct SettingsView: View {
 
   // MARK: Start at login
 
-  /// Shows what macOS has; turning it on or off changes the setting, or, when the setting already
-  /// says so but macOS disagrees, asks macOS again.
   private var startAtLogin: Binding<Bool> {
-    Binding(
-      get: { loginOn },
-      set: { on in
-        if store.settings.launchAtLogin == on { LoginItem.set(on) } else { store.settings.launchAtLogin = on }
-        refreshLogin()
-      })
+    LoginItem.switchBinding(store: store, shown: $loginOn, refreshed: refreshLogin)
   }
 
   private func refreshLogin() {

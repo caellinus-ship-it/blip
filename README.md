@@ -32,7 +32,8 @@ claude auth login
 ```
 
 Blip looks for `claude` in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and
-`~/.claude/local`. If yours is somewhere else, set its path in Settings > Advanced.
+`~/.claude/local`. If yours is somewhere else, set it in Settings, in the App section, under
+Path to claude.
 
 ## Using it
 

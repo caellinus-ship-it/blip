@@ -29,10 +29,9 @@ enum ScreenCapturer {
   /// Asks macOS for Screen Recording; the first call lists Blip in System Settings.
   static func requestPermission() { _ = CGRequestScreenCaptureAccess() }
 
-  /// The whole display, with Blip's own windows left out.
-  static func captureDisplay(_ screen: NSScreen) async throws -> Capture {
-    guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-    else { throw CaptureError.displayNotFound }
+  /// The whole display, with Blip's own windows left out. Callers read the ID from the `NSScreen` on the
+  /// main actor (`NSScreen.displayID`); this runs off it.
+  static func captureDisplay(_ displayID: CGDirectDisplayID) async throws -> Capture {
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
     guard let display = content.displays.first(where: { $0.displayID == displayID })
     else { throw CaptureError.displayNotFound }

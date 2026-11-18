@@ -40,7 +40,7 @@ public enum BlipProblem: Equatable {
   public var bubbleText: String {
     switch self {
     case .notLoggedIn: return "I can't reach my brain. Open Terminal and run: claude auth login"
-    case .toolMissing: return "I can't find the claude tool. Set its location in Settings, under Advanced."
+    case .toolMissing: return "I can't find the claude tool. Set the path to claude in Settings."
     case .noScreenPermission:
       return "I can't see your screen yet. Turn on Screen Recording for Blip in System Settings."
     case .noMicPermission:
