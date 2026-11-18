@@ -352,3 +352,28 @@ Decisions **(call)**:
 - A switch in settings, under Look, turns it off **(owner)**. It is on by
   default **(call)**. With it off, fly-in and fly-off show only the chosen
   trail, as before.
+
+## Addendum, 2026-11-17: settings redesign
+
+Asked for by the owner after seeing the first settings window: "make the
+settings page look better", and of the ideas offered, "this is good: bigger
+live preview as the centrepiece, so you see your combination flying as you
+change it" **(owner)**.
+
+- **The stage.** A large live preview is the centrepiece. Changing the
+  creature, ship, trail, colors, comet or motion replays the fly-in on the
+  stage and then settles into the hover **(owner)**. A Launch button
+  replays it on demand, and the stage shows the chosen size **(call)**.
+- **Picture pickers (call).** Creatures, ships and trails are chosen from
+  tiles that show the real pixel art, not from menus. The chosen tile is
+  outlined in the trail color.
+- **Arcade styling (call).** The window is always dark, in the same deep
+  blue-black as the mockup, with square-cornered panels and the trail
+  color as the accent. Text stays in the system font for readability.
+- **The name** sits under the stage as a name plate you can type into. An
+  empty name falls back to "Blip".
+- **Rough edges fixed in the same pass (call):** the shortcut recorder
+  refuses combinations that would break typing or copy and paste
+  everywhere, and says so when a combination is already taken; the Start at
+  login switch shows the real system state; an empty custom personality
+  falls back to playful.
