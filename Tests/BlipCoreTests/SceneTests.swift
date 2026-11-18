@@ -62,7 +62,7 @@ import Testing
     #expect(minY == 98); #expect(s.hitRect.y + 12 == 100)
   }
   @Test func launchShakesForTenTicks() {
-    var set = BlipSettings(); set.hover = .still
+    var set = BlipSettings(); set.hover = .still; set.flightPath = .straight
     var s = Scene(settings: set, bufferWidth: 240, bufferHeight: 200, seed: 1)
     var xs: [Int] = []
     for _ in 0..<20 { s.tick(); xs.append(s.hitRect.x + 12) }

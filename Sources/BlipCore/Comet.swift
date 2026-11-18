@@ -33,6 +33,8 @@ public struct CometShroud {
   private var tickCount = 0
   /// The tail streams below the body (the ship is moving up); mirrored otherwise.
   private var streamDown = true
+  /// How far the tail slides sideways per row, so it trails along a curved path.
+  private var lean = 0.0
   private var embers: [Ember] = []
   /// Each row's ragged edge, -1, 0 or +1, for the sheaths and the tail: left side then right side.
   private var wobble: [Int] = []
@@ -46,8 +48,9 @@ public struct CometShroud {
   /// (negative when moving up); the fire streams the opposite way. The
   /// direction only follows the ship while it is flying, so hover drift never
   /// flips a tail that is easing away.
-  public mutating func tick(flying: Bool, velocityY: Int) {
+  public mutating func tick(flying: Bool, velocityY: Int, lean target: Double? = nil) {
     tickCount += 1
+    if let target { lean += (target - lean) * 0.2 }
     strength += flying ? (1 - strength) * 0.25 : -strength * 0.07
     if strength < 0.02 { strength = 0 }
     if flying && velocityY != 0 { streamDown = velocityY < 0 }
@@ -159,7 +162,7 @@ public struct CometShroud {
       let f = Double(j) / Double(length)
       if f >= 0.75 && (j + tickCount) % 2 == 1 { continue }
       let width = max(1, Self.round(tailWidth * pow(1 - f, 1.6)))
-      let sway = Self.round(sin(Double(j + tickCount) / 5) * 2 * f)
+      let sway = Self.round(sin(Double(j + tickCount) / 5) * 2 * f + lean * Double(j))
       let k = j % Self.wobbleRows
       let ragL = width > 2 ? wobble[k] : 0, ragR = width > 2 ? wobble[Self.wobbleRows + k] : 0
       let left = cx + sway - width / 2, y = bottom + 1 + j

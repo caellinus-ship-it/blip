@@ -119,11 +119,23 @@ struct SettingsView: View {
       }
       colors
       SettingsPanel(title: "Flight") {
-        SettingRow(label: "Comet entrance") {
-          Toggle("Comet entrance", isOn: settings.comet)
-            .toggleStyle(.switch)
-            .labelsHidden()
-            .accessibilityLabel("Comet entrance")
+        // Five choices are too wide to share a line with their label.
+        VStack(alignment: .leading, spacing: 6) {
+          Text("Entry effect").foregroundStyle(SettingsTheme.text)
+          segmented(
+            "Entry effect", settings.entryEffect,
+            [(.none, "Off"), (.comet, "Comet"), (.warp, "Warp"), (.sparkle, "Sparkle"), (.bubble, "Bubble")])
+        }
+        SettingRow(label: "Path") {
+          segmented(
+            "Flight path", settings.flightPath,
+            [(.straight, "Straight"), (.curve, "Curve"), (.swoop, "Swoop"), (.spiral, "Spiral")])
+        }
+        SettingRow(label: "Speed") {
+          segmented("Speed", settings.flightSpeed, [(.relaxed, "Relaxed"), (.normal, "Normal"), (.zippy, "Zippy")])
+        }
+        SettingRow(label: "Aura") {
+          segmented("Aura", settings.aura, [(.rings, "Rings"), (.sparkles, "Stars"), (.halo, "Halo"), (.off, "Off")])
         }
         SettingRow(label: "Size") {
           segmented("Size", settings.size, [(.small, "Small"), (.medium, "Medium"), (.large, "Large")])

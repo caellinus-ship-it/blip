@@ -48,8 +48,9 @@ public struct Scene {
   private let auraColor: RGBA?
   private var motion: ShipMotion
   private var trail: TrailSystem
-  /// The fire around the ship in flight; `nil` when the comet setting is off.
-  private var shroud: CometShroud?
+  /// The effect around the ship in flight; `nil` when the entry effect is off.
+  private var shroud: EntryFX?
+  private let auraStyle: AuraStyle
   private let bufferHeight: Int
   private var ticks = 0
   private var step = 0
@@ -72,9 +73,12 @@ public struct Scene {
     hasDome = settings.ship == .pod
     ramp = ColorRamp(settings.trailColor)
     auraColor = settings.auraColor
-    motion = ShipMotion(bufferWidth: bufferWidth, bufferHeight: bufferHeight, hover: settings.hover)
+    auraStyle = settings.aura
+    motion = ShipMotion(
+      bufferWidth: bufferWidth, bufferHeight: bufferHeight, hover: settings.hover, path: settings.flightPath,
+      speed: settings.flightSpeed)
     trail = TrailSystem(style: settings.trail, seed: seed)
-    shroud = settings.comet ? CometShroud(seed: seed ^ 0x636F_6D65_74) : nil  // "comet", so it differs from the trail's
+    shroud = EntryFX(style: settings.entryEffect, seed: seed ^ 0x636F_6D65_74)  // "comet", so it differs from the trail's
     self.bufferHeight = bufferHeight
     (shipX, shipY) = (motion.x, motion.y)
     (shroudX, shroudY) = (shipX, shipY)
@@ -103,7 +107,8 @@ public struct Scene {
 
     // The fire's direction and embers follow the ship's flight alone, not the
     // shake or the overshoot, and stand still with it once it is gone.
-    shroud?.tick(flying: motion.flying, velocityY: gone ? 0 : motion.y - lastY)
+    shroud?.tick(
+      flying: motion.flying, velocityY: gone ? 0 : motion.y - lastY, velocity: gone ? (0, 0) : motion.velocity)
     trail.tick(
       shipX: shipX, shipY: shipY, exhaustY: shipY + shipSprite.height, flying: motion.flying, emitting: !gone)
     if gone { lingering = goneTicks < Self.lingerTicks && (!trail.isEmpty || shroudOnScreen) }
@@ -159,7 +164,7 @@ public struct Scene {
     if motion.phase == .gone { return }
 
     // While the fire is strong it takes the aura's place.
-    if (shroud?.strength ?? 0) <= 0.5 { drawAura(into: &b, x: x, y: y) }
+    if !(shroud?.hidesAura ?? false) || (shroud?.strength ?? 0) <= 0.5 { drawAura(into: &b, x: x, y: y) }
 
     let blink = step % 10 == 0
     let bob = (ticks / Self.bobTicks) % 2
@@ -194,6 +199,36 @@ public struct Scene {
   private func drawAura(into b: inout PixelBuffer, x: Int, y: Int) {
     let cy = y - 4
     let inner = auraColor ?? creature.highlight, outer = auraColor ?? creature.body
+    switch auraStyle {
+    case .off:
+      return
+    case .halo:
+      // Two solid rings, the outer one breathing in and out with the step.
+      for i in 0..<48 {
+        let a = Double(i) / 48 * 2 * Double.pi
+        dot(&b, x + Self.round(cos(a) * 15), cy + Self.round(sin(a) * 13), inner)
+        let grow = step % 2 == 0 ? 0.0 : 1.0
+        if i % 2 == 0 { dot(&b, x + Self.round(cos(a) * (18 + grow)), cy + Self.round(sin(a) * (16 + grow)), outer) }
+      }
+      return
+    case .sparkles:
+      // Little stars that hop to new places around the creature every step.
+      for i in 0..<9 {
+        let h = Double((i * 7919 + step * 104729) % 1000) / 1000
+        let a = (Double(i) + h) / 9 * 2 * Double.pi
+        let r = 14 + Double((i * 31 + step * 17) % 6)
+        let px = x + Self.round(cos(a) * r), py = cy + Self.round(sin(a) * r * 0.9)
+        let color = i % 3 == 0 ? Self.white : (i % 2 == 0 ? inner : outer)
+        dot(&b, px, py, color)
+        if (i + step) % 3 == 0 {
+          b.fill(x: px - 1, y: py, w: 3, h: 1, color)
+          b.fill(x: px, y: py - 1, w: 1, h: 3, color)
+        }
+      }
+      return
+    case .rings:
+      break
+    }
     for i in 0..<20 where (i + step) % 2 == 0 {
       let a = Double(i) / 20 * 2 * Double.pi
       dot(&b, x + Self.round(cos(a) * 15), cy + Self.round(sin(a) * 13), inner)

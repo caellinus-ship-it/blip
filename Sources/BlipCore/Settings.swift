@@ -49,6 +49,29 @@ public struct HotKey: Codable, Equatable {
   public static let commandEscape = HotKey(keyCode: 53, modifiers: 256)
 }
 
+/// The line the ship follows on its way in and out.
+public enum FlightPath: String, Codable, CaseIterable { case straight, curve, swoop, spiral }
+
+/// What surrounds the ship while it flies in and off.
+public enum EntryEffect: String, Codable, CaseIterable { case none, comet, warp, sparkle, bubble }
+
+/// How long the fly-in and fly-off take.
+public enum FlightSpeed: String, Codable, CaseIterable {
+  case relaxed, normal, zippy
+
+  /// Ticks for the fly-in and the fly-off.
+  public var ticks: (flyIn: Int, flyOut: Int) {
+    switch self {
+    case .relaxed: return (130, 64)
+    case .normal: return (90, 48)
+    case .zippy: return (60, 34)
+    }
+  }
+}
+
+/// What glows around the creature while it hovers.
+public enum AuraStyle: String, Codable, CaseIterable { case rings, sparkles, halo, off }
+
 /// Everything the user can change. Decoding fills any missing key with its default,
 /// so settings saved by an older version still load.
 public struct BlipSettings: Codable, Equatable {
@@ -58,8 +81,11 @@ public struct BlipSettings: Codable, Equatable {
   public var size = SizeOption.medium
   public var trail = TrailStyle.lightning
   public var trailColor = TrailColor.cyan
-  /// The ship flies in and off wrapped in fire, like a comet.
-  public var comet = true
+  /// What surrounds the ship while it flies in and off.
+  public var entryEffect = EntryEffect.comet
+  public var flightPath = FlightPath.curve
+  public var flightSpeed = FlightSpeed.normal
+  public var aura = AuraStyle.rings
   /// The aura's color; `nil` means use the creature's own colors.
   public var auraColor: RGBA? = nil
   public var bubbleColor: RGBA = 0x3B82F6FF
@@ -84,7 +110,16 @@ public struct BlipSettings: Codable, Equatable {
     size = try c.decodeIfPresent(SizeOption.self, forKey: .size) ?? d.size
     trail = try c.decodeIfPresent(TrailStyle.self, forKey: .trail) ?? d.trail
     trailColor = try c.decodeIfPresent(TrailColor.self, forKey: .trailColor) ?? d.trailColor
-    comet = try c.decodeIfPresent(Bool.self, forKey: .comet) ?? d.comet
+    if let effect = try c.decodeIfPresent(EntryEffect.self, forKey: .entryEffect) {
+      entryEffect = effect
+    } else {
+      // Saved before entry effects existed: the old switch was "comet" on or off.
+      let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+      entryEffect = (try legacy.decodeIfPresent(Bool.self, forKey: .comet) ?? true) ? .comet : .none
+    }
+    flightPath = try c.decodeIfPresent(FlightPath.self, forKey: .flightPath) ?? d.flightPath
+    flightSpeed = try c.decodeIfPresent(FlightSpeed.self, forKey: .flightSpeed) ?? d.flightSpeed
+    aura = try c.decodeIfPresent(AuraStyle.self, forKey: .aura) ?? d.aura
     auraColor = try c.decodeIfPresent(RGBA.self, forKey: .auraColor) ?? d.auraColor
     bubbleColor = try c.decodeIfPresent(RGBA.self, forKey: .bubbleColor) ?? d.bubbleColor
     hover = try c.decodeIfPresent(HoverMotion.self, forKey: .hover) ?? d.hover
@@ -99,6 +134,14 @@ public struct BlipSettings: Codable, Equatable {
 }
 
 extension BlipSettings {
+  private enum LegacyKeys: String, CodingKey { case comet }
+
+  /// The older on/off form of `entryEffect`: on means any effect, and turning it on picks the comet.
+  public var comet: Bool {
+    get { entryEffect != .none }
+    set { entryEffect = newValue ? (entryEffect == .none ? .comet : entryEffect) : .none }
+  }
+
   /// The name to show and to speak as: `name` without surrounding whitespace, or "Blip" when that is empty.
   public var displayName: String {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

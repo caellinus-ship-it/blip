@@ -11,6 +11,10 @@ public enum Phase: Equatable { case flyIn, hover, flyOut, gone }
 public struct ShipMotion {
   static let flyInTicks = 90
   static let flyOutTicks = 48
+  /// How far to the side the curved paths reach, in arcade pixels.
+  static let curveReach = 44.0
+  static let swoopReach = 26.0
+  static let spiralReach = 18.0
   static let flyInDepth = 30  // starts this far below the bottom edge
   static let flyOutY = -45
   /// How far the ship's drawing reaches from its top-centre `(x, y)`, in arcade pixels: the aura's outer
@@ -24,7 +28,17 @@ public struct ShipMotion {
   public private(set) var anchorX: Int
   public private(set) var anchorY: Int
 
+  /// The ship's exact movement this tick, before rounding, in arcade pixels (y negative when rising).
+  public private(set) var velocity: (dx: Double, dy: Double) = (0, 0)
+
   private let hover: HoverMotion
+  private let path: FlightPath
+  private let flyInTicks: Int
+  private let flyOutTicks: Int
+  /// The exact position the rounded `x`, `y` come from.
+  private var exact: (x: Double, y: Double) = (0, 0)
+  /// Where the current fly-off began, sideways.
+  private var fromX = 0
   private let bufferWidth: Int
   private let bufferHeight: Int
   /// Ticks spent in the current phase.
@@ -34,8 +48,13 @@ public struct ShipMotion {
 
   public var flying: Bool { phase == .flyIn || phase == .flyOut }
 
-  public init(bufferWidth: Int, bufferHeight: Int, hover: HoverMotion) {
+  public init(
+    bufferWidth: Int, bufferHeight: Int, hover: HoverMotion, path: FlightPath = .straight,
+    speed: FlightSpeed = .normal
+  ) {
     self.hover = hover
+    self.path = path
+    (flyInTicks, flyOutTicks) = speed == .normal ? (Self.flyInTicks, Self.flyOutTicks) : speed.ticks
     self.bufferWidth = bufferWidth
     self.bufferHeight = bufferHeight
     anchorX = bufferWidth / 2
@@ -43,38 +62,72 @@ public struct ShipMotion {
     x = anchorX
     fromY = bufferHeight + Self.flyInDepth
     y = fromY
+    x = anchorX + Int(sideways(arriving: 0).rounded())
+    exact = (Double(x), Double(y))
   }
 
   public mutating func tick() {
+    let before = exact
     switch phase {
     case .flyIn:
       phaseTicks += 1
-      if phaseTicks >= Self.flyInTicks {
+      if phaseTicks >= flyInTicks {
         phase = .hover; phaseTicks = 0; placeAtHoverOffset()
+        exact = (Double(x), Double(y))
       } else {
-        let p = Double(phaseTicks) / Double(Self.flyInTicks)
-        y = Self.lerp(fromY, anchorY, 1 - pow(1 - p, 3))
+        let e = 1 - pow(1 - Double(phaseTicks) / Double(flyInTicks), 3)
+        place(Double(anchorX) + sideways(arriving: e), Double(fromY) + Double(anchorY - fromY) * e)
       }
     case .hover:
       phaseTicks += 1
       placeAtHoverOffset()
+      exact = (Double(x), Double(y))
     case .flyOut:
       phaseTicks += 1
-      if phaseTicks >= Self.flyOutTicks {
+      if phaseTicks >= flyOutTicks {
         phase = .gone; y = Self.flyOutY
+        exact.y = Double(y)
       } else {
-        let p = Double(phaseTicks) / Double(Self.flyOutTicks)
-        y = Self.lerp(fromY, Self.flyOutY, pow(p, 3))
+        let e = pow(Double(phaseTicks) / Double(flyOutTicks), 3)
+        place(Double(fromX) + sideways(leaving: e), Double(fromY) + Double(Self.flyOutY - fromY) * e)
       }
     case .gone:
       break
+    }
+    velocity = (exact.x - before.x, exact.y - before.y)
+  }
+
+  private mutating func place(_ px: Double, _ py: Double) {
+    exact = (px, py)
+    x = Int(px.rounded()); y = Int(py.rounded())
+  }
+
+  /// How far to the side of the hover point the ship is when it is `e` of the way in (0 at the
+  /// bottom, 1 on arrival). Every path ends at 0, so the ship always lands on its hover point.
+  private func sideways(arriving e: Double) -> Double {
+    switch path {
+    case .straight: return 0
+    case .curve: return -Self.curveReach * pow(1 - e, 1.5)
+    case .swoop: return Self.swoopReach * sin(2 * Double.pi * e) * (1 - e)
+    case .spiral: return Self.spiralReach * sin(5 * Double.pi * e) * (1 - e)
+    }
+  }
+
+  /// How far to the side of where it left from the ship is when it is `e` of the way out.
+  private func sideways(leaving e: Double) -> Double {
+    switch path {
+    case .straight: return 0
+    case .curve: return Self.curveReach * pow(e, 1.5)
+    case .swoop: return Self.swoopReach * sin(2 * Double.pi * e) * e
+    case .spiral: return Self.spiralReach * sin(5 * Double.pi * e) * e
     }
   }
 
   /// Starts the fly-off from wherever the ship is now. Ignored once it is already leaving.
   public mutating func dismiss() {
     guard phase == .flyIn || phase == .hover else { return }
-    phase = .flyOut; phaseTicks = 0; fromY = y
+    phase = .flyOut; phaseTicks = 0; fromY = y; fromX = x
+    exact = (Double(x), Double(y))
   }
 
   /// Moves the hover centre, and the ship with it, but never so far that the ship or its aura would

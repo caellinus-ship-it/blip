@@ -45,11 +45,13 @@ struct CharacterPreview: NSViewRepresentable {
     /// are not part of it.
     private struct Look: Equatable {
       var creature: Creature, ship: Ship, trail: TrailStyle, trailColor: TrailColor
-      var auraColor: RGBA?, comet: Bool, hover: HoverMotion, size: SizeOption
+      var auraColor: RGBA?, hover: HoverMotion, size: SizeOption
+      var entryEffect: EntryEffect, flightPath: FlightPath, flightSpeed: FlightSpeed, aura: AuraStyle
 
       init(_ s: BlipSettings) {
-        (creature, ship, trail, trailColor, auraColor, comet, hover, size) =
-          (s.creature, s.ship, s.trail, s.trailColor, s.auraColor, s.comet, s.hover, s.size)
+        (creature, ship, trail, trailColor, auraColor, hover, size) =
+          (s.creature, s.ship, s.trail, s.trailColor, s.auraColor, s.hover, s.size)
+        (entryEffect, flightPath, flightSpeed, aura) = (s.entryEffect, s.flightPath, s.flightSpeed, s.aura)
       }
 
       /// True when going from `old` to this look only picked a new custom trail color or aura color,

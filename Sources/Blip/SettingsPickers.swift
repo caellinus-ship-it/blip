@@ -60,7 +60,7 @@ struct SettingRow<Control: View>: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      Text(label).foregroundStyle(SettingsTheme.text)
+      Text(label).foregroundStyle(SettingsTheme.text).lineLimit(1).fixedSize()
       Spacer(minLength: 0)
       control
     }

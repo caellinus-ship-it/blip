@@ -46,6 +46,10 @@ while let flag = args.next() {
   case "--ship": settings.ship = parse(flag, value, Ship.init(rawValue:))
   case "--trail": settings.trail = parse(flag, value, TrailStyle.init(rawValue:))
   case "--color": settings.trailColor = parse(flag, value) { colorPresets[$0] }
+  case "--path": settings.flightPath = parse(flag, value, FlightPath.init(rawValue:))
+  case "--effect": settings.entryEffect = parse(flag, value, EntryEffect.init(rawValue:))
+  case "--speed": settings.flightSpeed = parse(flag, value, FlightSpeed.init(rawValue:))
+  case "--aura": settings.aura = parse(flag, value, AuraStyle.init(rawValue:))
   case "--tick": ticks = parse(flag, value) { Int($0).flatMap { $0 >= 0 ? $0 : nil } }
   case "--out": outPath = value
   case "--dismiss": dismissAt = parse(flag, value) { Int($0).flatMap { $0 >= 0 ? $0 : nil } }
