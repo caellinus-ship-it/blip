@@ -100,4 +100,33 @@ import Testing
     while !s.isFinished { s.tick(); n += 1 }
     #expect(n < 40)   // echoes last 24 ticks; the linger does not run its full 60
   }
+  @Test func auraAndShipStayWithinTheReachTheDragClampUses() {
+    let r = ShipMotion.drawnReach
+    for c in Creature.allCases { for sh in Ship.allCases {
+      var set = BlipSettings(); set.creature = c; set.ship = sh; set.hover = .still; set.comet = false; set.trail = .rings
+      var s = Scene(settings: set, bufferWidth: 240, bufferHeight: 200, seed: 1)
+      for _ in 0..<150 { s.tick() }
+      let (ax, ay) = s.anchor
+      #expect(s.hitRect.x >= ax - r.left && s.hitRect.x + s.hitRect.w - 1 <= ax + r.right)
+      #expect(s.hitRect.y >= ay - r.up && s.hitRect.y + s.hitRect.h - 1 <= ay + r.down)
+      for _ in 0..<40 {
+        s.tick()
+        let b = frame(s)
+        // Rows above the exhaust hold only the aura, the creature, the dome and the ship.
+        for y in 0..<(ay + 9) { for x in 0..<240 where b.pixel(x: x, y: y) != 0 {
+          #expect(x >= ax - r.left && x <= ax + r.right && y >= ay - r.up, "\(c) \(sh) (\(x), \(y))")
+        } }
+      }
+    } }
+  }
+  @Test func draggingIntoACornerKeepsTheShipInside() {
+    var s = Scene(settings: BlipSettings(), bufferWidth: 240, bufferHeight: 200, seed: 1)
+    for _ in 0..<150 { s.tick() }
+    s.drag(dx: -999, dy: -999)
+    for _ in 0..<200 { s.tick(); #expect(s.hitRect.x >= 0 && s.hitRect.y >= 0) }
+    s.drag(dx: 999, dy: 999)
+    for _ in 0..<200 {
+      s.tick(); #expect(s.hitRect.x + s.hitRect.w <= 240 && s.hitRect.y + s.hitRect.h <= 200)
+    }
+  }
 }

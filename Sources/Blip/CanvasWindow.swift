@@ -12,15 +12,23 @@ final class CanvasWindow: NSPanel {
   let pointsPerPixel: Int
   /// Scratch buffer sized to cover the screen.
   var buffer: PixelBuffer
-  /// Called with whole-pixel deltas while the ship is dragged; `dy` grows downward.
-  var onDrag: ((_ dx: Int, _ dy: Int) -> Void)?
+  /// Called while the ship is dragged with the hover anchor the pointer asks for: the pointer's arcade
+  /// pixel minus where on the ship it was grabbed. It can lie outside the buffer; the scene stops the
+  /// ship at the edge.
+  var onDrag: ((_ anchor: (x: Int, y: Int)) -> Void)?
+  /// Called when a drag ends, with the pointer in screen coordinates and the grab offset in arcade pixels.
+  var onDragEnded: ((_ pointer: CGPoint, _ grab: (x: Int, y: Int)) -> Void)?
+  /// The ship's hover anchor in arcade pixels; the controller keeps it current.
+  var anchor = (x: 0, y: 0)
   /// Where the window takes mouse events, in window points; elsewhere clicks pass through.
   var hitRect: CGRect? { didSet { updateMouseAcceptance() } }
   private(set) var isDragging = false
 
   private let pixelLayer = CALayer()
-  private var dragStart = NSPoint.zero
-  private var reported = (x: 0, y: 0)
+  /// The pointer's arcade pixel minus the anchor, when the drag began.
+  private var grab = (x: 0, y: 0)
+  /// The anchor last asked for.
+  private var requested = (x: 0, y: 0)
 
   init(screen: NSScreen, pointsPerPixel: Int) {
     let ppp = max(1, pointsPerPixel)
@@ -113,24 +121,25 @@ final class CanvasWindow: NSPanel {
   override func mouseDown(with event: NSEvent) {
     guard let hitRect, hitRect.contains(event.locationInWindow) else { return }
     isDragging = true
-    dragStart = NSEvent.mouseLocation
-    reported = (0, 0)
+    let p = arcadePixel(atScreenPoint: NSEvent.mouseLocation)
+    grab = (p.x - anchor.x, p.y - anchor.y)
+    requested = anchor
   }
 
   override func mouseDragged(with event: NSEvent) {
     guard isDragging else { return }
-    let m = NSEvent.mouseLocation, p = CGFloat(pointsPerPixel)
-    // Screen y grows upward, arcade y downward.
-    let total = (x: Int((m.x - dragStart.x) / p), y: Int((dragStart.y - m.y) / p))
-    let dx = total.x - reported.x, dy = total.y - reported.y
-    guard dx != 0 || dy != 0 else { return }
-    reported = total
-    onDrag?(dx, dy)
+    let p = arcadePixel(atScreenPoint: NSEvent.mouseLocation)
+    let target = (x: p.x - grab.x, y: p.y - grab.y)
+    guard target != requested else { return }
+    requested = target
+    onDrag?(target)
   }
 
   override func mouseUp(with event: NSEvent) {
+    let wasDragging = isDragging
     isDragging = false
     updateMouseAcceptance()
+    if wasDragging { onDragEnded?(NSEvent.mouseLocation, grab) }
   }
 }
 

@@ -37,4 +37,30 @@ import Testing
     run(&m, 90); m.drag(dx: 10, dy: -5)
     #expect(m.anchorX == 210 && m.anchorY == 145 && m.x == 210 && m.y == 145)
   }
+  @Test func dragStopsWithTheShipAndItsAuraInsideTheBuffer() {
+    let r = ShipMotion.drawnReach
+    #expect(r.left == 19 && r.right == 19 && r.up == 21 && r.down == 13)
+    for hover in HoverMotion.allCases {
+      for (dx, dy) in [(-9999, 0), (9999, 0), (0, -9999), (0, 9999), (-9999, -9999), (9999, 9999)] {
+        var m = ShipMotion(bufferWidth: 400, bufferHeight: 300, hover: hover); run(&m, 90)
+        m.drag(dx: dx, dy: dy)
+        for _ in 0..<600 {
+          m.tick()
+          #expect(m.x - r.left >= 0 && m.x + r.right <= 399, "\(hover) x \(m.x)")
+          #expect(m.y - r.up >= 0 && m.y + r.down <= 299, "\(hover) y \(m.y)")
+        }
+      }
+    }
+  }
+  @Test func dragStopsAtTheEdgeAndComesBackAtOnce() {
+    var m = ShipMotion(bufferWidth: 400, bufferHeight: 300, hover: .still); run(&m, 90)
+    m.drag(dx: -500, dy: -500); #expect(m.anchorX == 19 && m.anchorY == 21)
+    m.drag(dx: 1000, dy: 1000); #expect(m.anchorX == 380 && m.anchorY == 286)
+    m.drag(dx: -10, dy: -6); #expect(m.anchorX == 370 && m.anchorY == 280)
+  }
+  @Test func figure8LeavesRoomForItsSwing() {
+    var m = ShipMotion(bufferWidth: 400, bufferHeight: 300, hover: .figure8); run(&m, 90)
+    m.drag(dx: -500, dy: -500); #expect(m.anchorX == 25 && m.anchorY == 24)
+    m.drag(dx: 1000, dy: 1000); #expect(m.anchorX == 374 && m.anchorY == 283)
+  }
 }

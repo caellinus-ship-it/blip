@@ -15,8 +15,8 @@ final class SummonController: NSObject {
   var onAnchorMoved: ((NSScreen, CGPoint) -> Void)?
   /// The shortcut sent the ship off; it is starting its fly-off.
   var onFlyOff: (() -> Void)?
-  /// The summon is over: the overlay closed after its fly-off, or a new summon
-  /// replaced it. Called exactly once per summon.
+  /// The summon is over: the overlay closed after its fly-off, a new summon
+  /// replaced it, or its display was unplugged. Called exactly once per summon.
   var onDismissed: (() -> Void)?
   var thinking = false { didSet { scene?.thinking = thinking } }
   /// When the shortcut that started the current summon was pressed (`CACurrentMediaTime`).
@@ -36,7 +36,11 @@ final class SummonController: NSObject {
   static let settleTicks = 150
 
   private let settings: () -> BlipSettings
+  /// The settings the current summon started with; moving to another screen keeps them.
+  private var summonSettings = BlipSettings()
   private var screen: NSScreen?
+  /// The display the overlay covers.
+  private var displayID: CGDirectDisplayID?
   private var window: CanvasWindow?
   private var scene: BlipCore.Scene?
   private var link: CADisplayLink?
@@ -50,6 +54,10 @@ final class SummonController: NSObject {
 
   init(settings: @escaping () -> BlipSettings) {
     self.settings = settings
+    super.init()
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification,
+      object: nil)
   }
 
   /// `pressedAt` is when the shortcut was taken (`CACurrentMediaTime`), for the debug timing log.
@@ -63,7 +71,8 @@ final class SummonController: NSObject {
       endSummon()
       thinking = false
       if let s = screenUnderPointer() ?? NSScreen.main {
-        start(on: s, hoveringAt: nil)
+        summonSettings = settings()
+        start(on: s, hovering: nil)
         announced = false
       }
     case .dismiss:
@@ -78,25 +87,31 @@ final class SummonController: NSObject {
 
   // MARK: Lifecycle
 
-  /// Opens the overlay on `screen`. With `hoveringAt`, the ship is already
-  /// hovering with its anchor under that screen point; otherwise it flies in.
-  private func start(on screen: NSScreen, hoveringAt point: CGPoint?) {
-    let s = settings()
+  /// Opens the overlay on `screen` with the summon's settings. With `hovering`, the ship is already
+  /// hovering with its anchor at the pointer (a screen point) minus the grab offset (arcade pixels),
+  /// kept inside the screen; otherwise it flies in.
+  private func start(on screen: NSScreen, hovering: (pointer: CGPoint, grab: (x: Int, y: Int))?) {
+    let s = summonSettings
     let w = CanvasWindow(screen: screen, pointsPerPixel: s.size.pointsPerPixel)
     var sc = BlipCore.Scene(
       settings: s, bufferWidth: w.buffer.width, bufferHeight: w.buffer.height, seed: Self.clockSeed())
     sc.thinking = thinking
-    if let point {
+    if let hovering {
       for _ in 0..<Self.settleTicks { sc.tick() }
-      let target = w.arcadePixel(atScreenPoint: point)
-      sc.drag(dx: target.x - sc.anchor.x, dy: target.y - sc.anchor.y)
+      let p = w.arcadePixel(atScreenPoint: hovering.pointer)
+      sc.drag(dx: p.x - hovering.grab.x - sc.anchor.x, dy: p.y - hovering.grab.y - sc.anchor.y)
     }
-    arrived = point != nil
+    arrived = hovering != nil
     blankTicks = 0
     lastTimestamp = nil
     accumulator = 0
-    w.onDrag = { [weak self] dx, dy in self?.dragged(dx: dx, dy: dy) }
+    w.onDrag = { [weak self] anchor in self?.dragged(to: anchor) }
+    w.onDragEnded = { [weak self] pointer, grab in
+      // After the event that ended the drag, since moving to another screen closes this window.
+      DispatchQueue.main.async { MainActor.assumeIsolated { self?.dragEnded(pointer: pointer, grab: grab) } }
+    }
     self.screen = screen
+    displayID = screen.displayID
     window = w
     scene = sc
     render()
@@ -122,11 +137,23 @@ final class SummonController: NSObject {
     link?.invalidate()
     link = nil
     window?.onDrag = nil
+    window?.onDragEnded = nil
     window?.orderOut(nil)
     window?.close()
     window = nil
     scene = nil
     screen = nil
+    displayID = nil
+  }
+
+  /// A display was plugged in, unplugged or rearranged. A summon whose display is gone ends at once, the
+  /// way a finished fly-off does; its chat closes with it.
+  @objc private func screensChanged(_ notification: Notification) {
+    guard window != nil, let displayID else { return }
+    let displays = NSScreen.screens.compactMap(\.displayID)
+    guard SummonState.endsOnDisplayChange(shipDisplay: displayID, displays: displays) else { return }
+    thinking = false
+    endSummon()
   }
 
   // MARK: Frames
@@ -137,11 +164,6 @@ final class SummonController: NSObject {
     if !announced {
       announced = true
       onSummoned?(screen)
-    }
-
-    if w.isDragging, let other = screenUnderPointer(), other.frame != screen.frame {
-      moveToScreen(other)
-      return
     }
 
     if let last = lastTimestamp { accumulator += link.timestamp - last }
@@ -165,6 +187,7 @@ final class SummonController: NSObject {
 
     if !arrived && phase == .hover {
       arrived = true
+      logAnchor("arrived")
       onArrived?(screen, anchorPoint())
     }
 
@@ -183,22 +206,32 @@ final class SummonController: NSObject {
     sc.render(into: &w.buffer)
     w.present(w.buffer)
     w.hitRect = sc.phase == .hover ? w.windowRect(arcade: sc.hitRect) : nil
+    w.anchor = sc.anchor
   }
 
   // MARK: Dragging
 
-  private func dragged(dx: Int, dy: Int) {
+  /// Moves the anchor toward where the pointer asks for it; the scene stops it at the screen's edges.
+  private func dragged(to target: (x: Int, y: Int)) {
     guard scene?.phase == .hover, let screen else { return }
-    scene!.drag(dx: dx, dy: dy)
+    let before = scene!.anchor
+    scene!.drag(dx: target.x - before.x, dy: target.y - before.y)
+    guard scene!.anchor != before else { return }
     render()
     onAnchorMoved?(screen, anchorPoint())
   }
 
-  /// Rebuilds the overlay on `other`, hovering under the pointer.
-  private func moveToScreen(_ other: NSScreen) {
-    let pointer = NSEvent.mouseLocation
+  /// Let go on another display: the overlay is rebuilt there with the ship hovering under the pointer,
+  /// held where it was grabbed, and the chat follows. Nothing moves once the ship has been sent off.
+  private func dragEnded(pointer: CGPoint, grab: (x: Int, y: Int)) {
+    guard let phase = scene?.phase, let displayID else { return }
+    let other = NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) }
+    guard let other,
+          SummonState.movesOnDragEnd(phase: phase, shipDisplay: displayID, pointerDisplay: other.displayID)
+    else { return logAnchor("drag ended") }
     tearDown()
-    start(on: other, hoveringAt: pointer)
+    start(on: other, hovering: (pointer, grab))
+    logAnchor("drag ended, moved to another display")
     onAnchorMoved?(other, anchorPoint())
   }
 
@@ -210,6 +243,14 @@ final class SummonController: NSObject {
     return w.screenPoint(arcadeX: sc.anchor.x, y: sc.anchor.y)
   }
 
+  /// Debug log: where the anchor is, in screen points (top-left origin, as `CGEvent`s use) and arcade pixels.
+  private func logAnchor(_ what: String) {
+    guard SummonTiming.on, let sc = scene, let displayID else { return }
+    let p = anchorPoint(), top = NSScreen.screens.first?.frame.maxY ?? 0
+    SummonTiming.log(String(format: "ship: %@ on display %u, anchor (%.1f, %.1f), arcade (%d, %d)",
+                            what, displayID, p.x, top - p.y, sc.anchor.x, sc.anchor.y))
+  }
+
   private func screenUnderPointer() -> NSScreen? {
     let m = NSEvent.mouseLocation
     return NSScreen.screens.first { NSMouseInRect(m, $0.frame, false) }
@@ -217,6 +258,13 @@ final class SummonController: NSObject {
 
   private static func clockSeed() -> UInt64 {
     UInt64(Date().timeIntervalSince1970 * 1000)
+  }
+}
+
+extension NSScreen {
+  /// The display this screen shows, as Core Graphics and ScreenCaptureKit know it.
+  var displayID: CGDirectDisplayID? {
+    deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
   }
 }
 
