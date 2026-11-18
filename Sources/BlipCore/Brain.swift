@@ -329,18 +329,40 @@ public enum ActionRules {
     switch tool {
     case "ToolSearch", "WebSearch": return .read
     case "Read", "Glob", "Grep":
-      // Looking outside the three folders is worth a question: it could be keys or private files.
-      guard let path else { return .read }
-      return folders(home: home).contains { path == $0 || path.hasPrefix($0 + "/") } ? .read : .risky
+      // Looking anywhere but the three folders is worth a question: it could be keys or private
+      // files. No path at all means "wherever the session is", so that asks too.
+      return path.map { isInsideFolders($0, home: home) } == true ? .read : .risky
     case "WebFetch": return .gentle
-    case "Write": return path.map(exists) == false ? .gentle : .risky
+    case "Write":
+      // Only a brand-new, visible file inside the three folders is harmless.
+      guard let path, isInsideFolders(path, home: home), !exists(path),
+            !path.split(separator: "/").contains(where: { $0.hasPrefix(".") })
+      else { return .risky }
+      return .gentle
     default: return .risky
     }
   }
 
+  /// True only when `path` is absolute and, with every `..` and symlink resolved, lies in one of
+  /// the three folders. Anything that cannot be shown to be inside counts as outside.
+  static func isInsideFolders(_ path: String, home: String) -> Bool {
+    guard path.hasPrefix("/") else { return false }
+    func real(_ p: String) -> String { URL(fileURLWithPath: p).standardizedFileURL.resolvingSymlinksInPath().path }
+    let resolved = real(path)
+    return folders(home: home).map(real).contains { resolved == $0 || resolved.hasPrefix($0 + "/") }
+  }
+
   public static func summary(tool: String, input: [String: Any], home: String, exists: (String) -> Bool) -> String {
     func short(_ path: String) -> String { path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path }
-    func clip(_ text: String, _ limit: Int) -> String { text.count > limit ? String(text.prefix(limit)) + "…" : text }
+    // What the owner approves is shown whole, never cut short: a hidden tail could be the harmful part.
+    // Invisible control characters are made visible so they cannot hide anything either.
+    func whole(_ text: String) -> String {
+      String(text.unicodeScalars.map { scalar -> Character in
+        let hidden = (scalar.properties.generalCategory == .control && scalar != "\n" && scalar != "\t")
+          || scalar.properties.generalCategory == .format
+        return hidden ? "\u{FFFD}" : Character(scalar)
+      })
+    }
     func text(_ key: String) -> String? { input[key] as? String }
     func people(_ key: String) -> String? {
       if let one = input[key] as? String { return one }
@@ -355,8 +377,8 @@ public enum ActionRules {
     case "Edit", "NotebookEdit": return "Edit the file " + (path ?? "")
     case "Read": return "Read the file " + (path ?? "")
     case "Glob", "Grep": return "Look through " + (path ?? "your files")
-    case "Bash": return "Run this command:\n" + clip(text("command") ?? "", 300)
-    case "WebFetch": return "Open this web page:\n" + clip(text("url") ?? "", 200)
+    case "Bash": return "Run this command:\n" + whole(text("command") ?? "")
+    case "WebFetch": return "Open this web page:\n" + whole(text("url") ?? "")
     default: break
     }
     guard tool.hasPrefix("mcp__") else { return "Use " + tool }
@@ -364,8 +386,9 @@ public enum ActionRules {
     let service = (parts.count > 1 ? parts[1] : "").replacingOccurrences(of: "claude_ai_", with: "")
       .replacingOccurrences(of: "_", with: " ")
     let name = parts.last ?? tool
-    let to = people("to").map { " to " + clip($0, 80) } ?? ""
-    let about = text("subject").map { ": “" + clip($0, 80) + "”" } ?? ""
+    let others = ["cc", "bcc"].compactMap { key in people(key).map { ", \(key) " + whole($0) } }.joined()
+    let to = (people("to").map { " to " + whole($0) } ?? "") + others
+    let about = text("subject").map { ": “" + whole($0) + "”" } ?? ""
     switch name {
     case "send_message", "reply", "forward": return "Send an email" + to + about
     case "create_draft", "update_draft": return "Write a draft email" + to + about

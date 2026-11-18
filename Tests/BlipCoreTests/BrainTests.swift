@@ -97,4 +97,36 @@ import Testing
     #expect(p.contains("If you cannot read something because one window is too small or blurry in the screenshot, "
       + "or the question is about one specific window in the list, reply with exactly LOOK:<number>"))
   }
+  @Test func actionRulesFailClosedOnPaths() {
+    let home = "/Users/x"
+    func kind(_ tool: String, _ path: String?, exists: Bool = false) -> ActionKind {
+      ActionRules.kind(tool: tool, input: path.map { ["file_path": $0] } ?? [:], home: home, exists: { _ in exists })
+    }
+    #expect(kind("Read", "/Users/x/Desktop/notes.txt") == .read)
+    #expect(kind("Read", "/Users/x/Desktop/../.ssh/id_rsa") == .risky)
+    #expect(kind("Read", "/Users/x/Desktopish/a.txt") == .risky)
+    #expect(kind("Read", "Desktop/notes.txt") == .risky)
+    #expect(kind("Read", "/Users/x/.ssh/id_rsa") == .risky)
+    #expect(kind("Grep", nil) == .risky)
+    #expect(kind("Write", "/Users/x/Desktop/new.txt") == .gentle)
+    #expect(kind("Write", "/Users/x/Desktop/new.txt", exists: true) == .risky)
+    #expect(kind("Write", "/Users/x/Desktop/../Library/LaunchAgents/a.plist") == .risky)
+    #expect(kind("Write", "/Users/x/.zshrc") == .risky)
+    #expect(kind("Write", "/Users/x/Documents/.hidden") == .risky)
+    #expect(kind("Bash", nil) == .risky)
+    #expect(ActionRules.needsAsk(.read, policy: .anyChange) == false)
+    #expect(ActionRules.needsAsk(.gentle, policy: .anyChange)); #expect(!ActionRules.needsAsk(.gentle, policy: .riskyOnly))
+    #expect(ActionRules.needsAsk(.risky, policy: .riskyOnly)); #expect(!ActionRules.needsAsk(.risky, policy: .never))
+  }
+  @Test func approvalSummaryIsNeverCutShort() {
+    let long = "echo ok; " + String(repeating: "x", count: 600) + "; rm -rf ~/Documents"
+    let summary = ActionRules.summary(tool: "Bash", input: ["command": long], home: "/Users/x", exists: { _ in false })
+    #expect(summary.hasSuffix("rm -rf ~/Documents"))
+    let mail = ActionRules.summary(
+      tool: "mcp__claude_ai_Gmail__send_message",
+      input: ["to": ["a@example.com"], "bcc": ["hidden@example.com"], "subject": "Hi"], home: "/Users/x", exists: { _ in false })
+    #expect(mail.contains("a@example.com") && mail.contains("bcc hidden@example.com"))
+    let sneaky = ActionRules.summary(tool: "Bash", input: ["command": "ls\u{1B}[2K\u{202E}"], home: "/Users/x", exists: { _ in false })
+    #expect(!sneaky.unicodeScalars.contains("\u{1B}") && !sneaky.unicodeScalars.contains("\u{202E}"))
+  }
 }
