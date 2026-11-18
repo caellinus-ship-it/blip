@@ -1,11 +1,18 @@
 import AppKit
 import BlipCore
 
-// `Blip --brain-check "<question>" [--image <path.jpg>] [--kill-after <seconds>]`:
+// `Blip --brain-check "<question>" [--image <path.jpg>] [--capture] [--kill-after <seconds>]`:
 // asks the hidden session one question with no UI, prints each event, then exits.
+// `--capture` sends a fresh capture of the main display and its window list with the question.
 // `--kill-after` kills the `claude` child (not Blip) that many seconds after the question is sent.
 if CommandLine.arguments.contains("--brain-check") {
   MainActor.assumeIsolated { BrainCheck.run(CommandLine.arguments) }
+}
+
+// `Blip --capture-check`: prints the Screen Recording permission, captures the main display in memory
+// and prints the JPEG's size and the window list, with no UI, then exits. Nothing is written to disk.
+if CommandLine.arguments.contains("--capture-check") {
+  MainActor.assumeIsolated { CaptureCheck.run() }
 }
 
 let app = NSApplication.shared
@@ -21,7 +28,7 @@ app.run()
       return arguments[i + 1]
     }
     guard let question = value(after: "--brain-check") else {
-      fail("usage: Blip --brain-check \"<question>\" [--image <path.jpg>] [--kill-after <seconds>]")
+      fail("usage: Blip --brain-check \"<question>\" [--image <path.jpg>] [--capture] [--kill-after <seconds>]")
     }
     var jpegs: [Data] = []
     if let path = value(after: "--image") {
@@ -29,6 +36,11 @@ app.run()
       jpegs.append(jpeg)
     }
     let killAfter = value(after: "--kill-after").flatMap(Double.init)
+    let capture = arguments.contains("--capture")
+    if capture && !ScreenCapturer.hasPermission {
+      ScreenCapturer.requestPermission()
+      fail("--capture needs Screen Recording permission for Blip (System Settings > Privacy & Security)")
+    }
 
     setvbuf(stdout, nil, _IOLBF, 0)
     let start = DispatchTime.now()
@@ -61,12 +73,28 @@ app.run()
       say("EXIT")
       finish(1)
     }
-    session.send(text: question, jpegs: jpegs, windows: [])
-
-    if let killAfter {
-      DispatchQueue.main.asyncAfter(deadline: .now() + killAfter) {
-        if session.isRunning { kill(session.processIdentifier, SIGKILL) }
+    func ask(jpegs: [Data], windows: [WindowInfo]) {
+      session.send(text: question, jpegs: jpegs, windows: windows)
+      if let killAfter {
+        DispatchQueue.main.asyncAfter(deadline: .now() + killAfter) {
+          if session.isRunning { kill(session.processIdentifier, SIGKILL) }
+        }
       }
+    }
+
+    if capture {
+      Task { @MainActor in
+        do {
+          let shot = try await ScreenCapturer.captureDisplay(NSScreen.main ?? NSScreen.screens[0])
+          say("captured \(shot.jpeg.count) bytes, \(shot.windows.count) windows")
+          ask(jpegs: jpegs + [shot.jpeg], windows: shot.windows)
+        } catch {
+          say("CAPTURE FAILED \(error)")
+          finish(1)
+        }
+      }
+    } else {
+      ask(jpegs: jpegs, windows: [])
     }
 
     DispatchQueue.main.asyncAfter(deadline: .now() + 120) {
@@ -81,6 +109,54 @@ app.run()
   private static func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(2)
+  }
+}
+
+@MainActor enum CaptureCheck {
+  static func run() -> Never {
+    setvbuf(stdout, nil, _IOLBF, 0)
+    let permission = ScreenCapturer.hasPermission
+    print("permission: \(permission)")
+    guard permission else {
+      ScreenCapturer.requestPermission()
+      print("requested Screen Recording; allow Blip in System Settings > Privacy & Security, then run again")
+      exit(1)
+    }
+    guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+      print("no display")
+      exit(1)
+    }
+    Task { @MainActor in
+      do {
+        let start = DispatchTime.now()
+        let capture = try await ScreenCapturer.captureDisplay(screen)
+        let ms = (DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+        print("display: \(describe(capture.jpeg)) in \(ms) ms")
+        print("windows: \(capture.windows.count)")
+        for window in capture.windows {
+          print("  \(window.id)  \(window.app)\(window.title.isEmpty ? "" : " — " + window.title)")
+        }
+        if let front = capture.windows.first {
+          let jpeg = try await ScreenCapturer.captureWindow(id: front.id)
+          print("front window \(front.id): \(describe(jpeg))")
+        }
+        exit(0)
+      } catch {
+        print("capture failed: \(error)")
+        exit(1)
+      }
+    }
+    RunLoop.main.run()
+    exit(0)
+  }
+
+  /// Byte count and pixel size, read back from the JPEG in memory.
+  private static func describe(_ jpeg: Data) -> String {
+    let source = CGImageSourceCreateWithData(jpeg as CFData, nil)
+    let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) } as? [CFString: Any]
+    let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
+    let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
+    return "\(jpeg.count) bytes JPEG, \(width)x\(height) px"
   }
 }
 
