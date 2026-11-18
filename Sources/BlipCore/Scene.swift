@@ -59,6 +59,7 @@ public struct Scene {
   static let domeColor: RGBA = 0xBAE6FDFF
   static let white = Art.white
   static let yellow = Art.yellow
+  static let tongue: RGBA = 0xFB7185FF
 
   /// While true, the aura steps faster. Starting to think counts as activity.
   public var thinking = false {
@@ -409,7 +410,11 @@ public struct Scene {
     case .framed(let c, let w, let h):
       drawFramedEye(into: &b, x: x + c.x, y: y + c.y, w: w, h: h, shape: shape, dark: dark, light: light)
     }
-    if mood == .yawning { b.fill(x: x + creature.mouth.x, y: y + creature.mouth.y, w: 2, h: 2, Art.outline) }
+    if mood == .yawning {
+      // A dark mouth over a pink tongue: the tongue keeps the mouth apart from any outline just below it.
+      b.fill(x: x + creature.mouth.x, y: y + creature.mouth.y, w: 2, h: 1, Art.outline)
+      b.fill(x: x + creature.mouth.x, y: y + creature.mouth.y + 1, w: 2, h: 1, Self.tongue)
+    }
   }
 
   /// One 2x2 eye with its top-left at `(x, y)`. The 3-wide shapes grow by one column `outward`

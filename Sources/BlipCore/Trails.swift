@@ -197,15 +197,15 @@ public struct TrailSystem {
     ageParticles()
   }
 
-  /// Like confetti but gentler: fewer pieces, falling slowly with a wider, slower sway. Most flakes
+  /// Like confetti but gentler: pieces falling slowly with a wider, slower sway. Most flakes
   /// are small; about half are white, most of the rest the ramp's light color.
   private mutating func tickSnow() {
-    if spawnDue(every: Int((12 - 8 * power).rounded())) {
-      let x = Double(shipX) + (random.next() - 0.5) * 14
+    if spawnDue(every: Int((8 - 6 * power).rounded())) {
+      let x = Double(shipX) + (random.next() - 0.5) * 20
       let vx = (random.next() - 0.5) * 0.3
       let vy = 0.2 + random.next() * 0.2 + 0.3 * power
       let s = random.next(), t = random.next()
-      let shape = s < 0.25 ? 0 : (s < 0.65 ? 1 : 2)
+      let shape = s < 0.35 ? 0 : (s < 0.7 ? 1 : 2)
       let tint = t < 0.5 ? 0 : (t < 0.9 ? 1 : 2)
       particles.append(
         Particle(x: x, y: Double(exhaustY), life: 48 + 18 * power, vx: vx, vy: vy, shape: shape, tint: tint))
