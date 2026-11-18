@@ -54,7 +54,7 @@ public enum BlipProblem: Equatable {
   /// Reads the text of an error result from the hidden session.
   public static func classify(resultText: String) -> BlipProblem {
     let lower = resultText.lowercased()
-    if ["authenticate", "oauth", "log in"].contains(where: lower.contains) { return .notLoggedIn }
+    if ["authenticate", "oauth", "log in", "login"].contains(where: lower.contains) { return .notLoggedIn }
     if lower.contains("limit") { return .usageLimit }
     return .other(resultText)
   }

@@ -97,6 +97,11 @@ import BlipCore
     questionNumber += 1
     let number = questionNumber
 
+    // A session that died while idle was dropped; start one now, at most once per question.
+    if session == nil {
+      session = pool.take()
+      adopt(session)
+    }
     guard let session else { return fail(.toolMissing) }
     guard ScreenCapturer.hasPermission else {
       ScreenCapturer.requestPermission()
@@ -146,8 +151,8 @@ import BlipCore
     let item = DispatchWorkItem { [weak self] in
       guard let self, !self.closed, number == self.questionNumber, self.model.log.awaitingFirstText else { return }
       self.fail(.timeout)
-      // The late reply would land on the next question; start over with a fresh session.
-      self.replaceSession()
+      // The late reply would land on the next question; the next one gets a fresh session.
+      self.dropSession()
     }
     timeout = item
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.replyTimeout, execute: item)
@@ -216,15 +221,17 @@ import BlipCore
     onThinkingChanged?(false)
   }
 
+  /// A `claude` that dies is not replaced here: the next question takes a new one. Replacing it at once
+  /// would spin, launching `claude` after `claude`, if it dies at launch.
   private func sessionExited() {
     guard !closed else { return }
     if model.log.waiting { fail(.other("the assistant stopped unexpectedly")) }
-    replaceSession()
+    dropSession()
   }
 
-  private func replaceSession() {
+  private func dropSession() {
     if let session { pool.release(session) }
-    session = pool.take()
-    adopt(session)
+    session = nil
+    adopt(nil)
   }
 }

@@ -21,16 +21,18 @@ final class BrainSession {
   /// Seconds `stop` waits for the process to honor SIGTERM before it sends SIGKILL.
   private static let killDelay: TimeInterval = 2
 
-  /// Debug switch `BLIP_DEBUG=1`: the child's stderr and every parsed event go to Blip's stderr.
+  /// Debug switch `BLIP_DEBUG=1`: each launch, the child's stderr and every parsed event go to Blip's stderr.
   private static let debug = ProcessInfo.processInfo.environment["BLIP_DEBUG"] == "1"
 
   init?(settings: BlipSettings) {
     var environment = ProcessInfo.processInfo.environment
     // Debug switch `BLIP_NO_CLAUDE=1`: behave as if the tool were missing.
     if environment["BLIP_NO_CLAUDE"] == "1" { return nil }
+    // Debug switch `BLIP_CLAUDE_PATH=<path>`: run this executable instead of `claude`, e.g. `/usr/bin/false`.
+    let customPath = environment["BLIP_CLAUDE_PATH"] ?? settings.claudePath
     let home = environment["HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()
     environment["HOME"] = home
-    guard let claude = ClaudeLocator.find(custom: settings.claudePath, home: home,
+    guard let claude = ClaudeLocator.find(custom: customPath, home: home,
                                           exists: FileManager.default.isExecutableFile(atPath:))
     else { return nil }
 
@@ -65,6 +67,7 @@ final class BrainSession {
       output.fileHandleForReading.readabilityHandler = nil
       return nil
     }
+    if Self.debug { FileHandle.standardError.write(Data("BrainSession launched \(claude) pid \(process.processIdentifier)\n".utf8)) }
   }
 
   var isRunning: Bool { process.isRunning }

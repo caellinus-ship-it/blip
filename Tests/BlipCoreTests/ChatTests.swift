@@ -48,6 +48,7 @@ import Testing
   }
   @Test func problemsClassify() {
     #expect(BlipProblem.classify(resultText: "Failed to authenticate: OAuth session expired") == .notLoggedIn)
+    #expect(BlipProblem.classify(resultText: "Invalid API key · Please run /login") == .notLoggedIn)
     #expect(BlipProblem.classify(resultText: "Usage limit reached") == .usageLimit)
     #expect(BlipProblem.classify(resultText: "boom") == .other("boom"))
     #expect(BlipProblem.other("boom").bubbleText == "Something went wrong: boom")

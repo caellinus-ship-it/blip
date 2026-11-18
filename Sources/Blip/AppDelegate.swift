@@ -33,7 +33,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       self?.conversation?.shipMoved(on: screen, anchor: anchor, shipHalfWidth: summon?.shipHalfWidth ?? 0)
     }
     // The chat leaves with the fly-off; a summon replaced without one is closed when it ends.
-    summon.onFlyOff = { [weak self] in self?.endConversation() }
+    summon.onFlyOff = { [weak self, weak summon] in
+      summon?.thinking = false  // a reply cut off by the fly-off is no longer being thought about
+      self?.endConversation()
+    }
     summon.onDismissed = { [weak self] in self?.endConversation() }
     hotKeys = HotKeyCenter(hotKey: .commandEscape) { [weak self] in
       MainActor.assumeIsolated { self?.summonPressed() }
@@ -63,8 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     MainActor.assumeIsolated {
-      endConversation()
+      // Shut the pool first, so ending the conversation does not start a standby only to kill it.
       pool?.shutdown()
+      endConversation()
     }
   }
 
