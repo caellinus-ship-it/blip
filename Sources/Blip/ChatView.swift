@@ -10,6 +10,8 @@ import SwiftUI
   /// Enter was pressed in the text box; carries the box's text.
   var onSend: ((String) -> Void)?
   var onMic: (() -> Void)?
+  /// The chat panel has the keyboard, so typing goes into the text box.
+  @Published var hasKeyboard = false
   /// What the assistant is waiting for permission to do, in plain words; `nil` when nothing.
   @Published var pendingAsk: String?
   /// The owner pressed Allow (true) or Don't (false) on the pending question.
@@ -183,7 +185,10 @@ struct ChatView: View {
     .frame(height: Self.inputHeight)
     .background(
       RoundedRectangle(cornerRadius: 12).fill(Palette.field)
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.fieldBorder, lineWidth: 1))
+        // A bright edge says "you are typing here"; the thin grey one says the keyboard is elsewhere.
+        .overlay(
+          RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(model.hasKeyboard ? bubbleColor : Palette.fieldBorder, lineWidth: model.hasKeyboard ? 2 : 1))
     )
   }
 }

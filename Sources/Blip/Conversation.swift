@@ -8,6 +8,7 @@ import BlipCore
   static let replyTimeout: TimeInterval = 30
   /// Seconds an assistant that may act can go quiet (a slow command, a mail search) before that.
   static let actingTimeout: TimeInterval = 120
+  static let screenReply = "Here is my screen. Now answer my question."
   static let closeUpRequest = "Here is a close-up of window %d. Now answer my question."
   static let unclearWindowReply = "I couldn't get a clear look at that window. Try making it bigger and asking again."
 
@@ -122,14 +123,29 @@ import BlipCore
       adopt(session)
     }
     guard let session else { return fail(.toolMissing) }
+    let question = model.log.messages.last?.text ?? text
+    onThinkingChanged?(true)
+    startTimeout(for: number)
+
+    // The screen goes along only when the question sounds like it is about the screen; otherwise
+    // the assistant answers straight away, or asks for the screen with `LOOK:0`.
+    if ScreenNeed.likely(question) {
+      sendWithScreen(question, to: session)
+    } else {
+      windows = []
+      gate = ReplyGate(windowCount: 0, allowLook: false, allowScreen: true)
+      pendingResults += 1
+      session.send(text: question, jpegs: [], windows: [])
+    }
+  }
+
+  /// Captures the display the ship is on and sends `text` with it and the window list.
+  private func sendWithScreen(_ text: String, to session: BrainSession) {
     guard ScreenCapturer.hasPermission else {
       ScreenCapturer.requestPermission()
       return fail(.noScreenPermission)
     }
-    onThinkingChanged?(true)
-    startTimeout(for: number)
-
-    let question = model.log.messages.last?.text ?? text
+    let number = questionNumber
     let displayID = screen.displayID
     Task { @MainActor [weak self] in
       do {
@@ -139,7 +155,7 @@ import BlipCore
         self.windows = shot.windows
         self.gate = ReplyGate(windowCount: min(shot.windows.count, WindowList.limit), allowLook: true)
         self.pendingResults += 1
-        session.send(text: question, jpegs: [shot.jpeg], windows: shot.windows)
+        session.send(text: text, jpegs: [shot.jpeg], windows: shot.windows)
       } catch {
         guard let self, self.isCurrent(number, session) else { return }
         self.fail(.other("I couldn't take a picture of your screen."))
@@ -230,6 +246,9 @@ import BlipCore
     gate = nil
     switch g.finish() {
     case .text(let rest): finish(appending: rest)
+    case .look(0):
+      // A question sent without the screen turned out to need it.
+      if let session { sendWithScreen(Self.screenReply, to: session) }
     case .look(let n): sendCloseUp(of: n)
     case .unusableMarker: finish(appending: Self.unclearWindowReply)
     }

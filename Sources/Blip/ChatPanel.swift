@@ -13,8 +13,10 @@ final class ChatPanel: NSPanel {
   private var solidRects: [CGRect] = []
   /// Polls the pointer while the panel is shown, to switch click-through on and off.
   private var pointerTimer: Timer?
+  private let model: ChatModel
 
   init(model: ChatModel, name: String, bubbleColor: RGBA) {
+    self.model = model
     super.init(
       contentRect: NSRect(x: 0, y: 0, width: ChatView.width, height: ChatView.inputHeight),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -43,11 +45,48 @@ final class ChatPanel: NSPanel {
   override func becomeKey() {
     super.becomeKey()
     SummonTiming.log("chat: has the keyboard")
+    model.hasKeyboard = true
+    focusTextBox()
   }
 
   override func resignKey() {
     super.resignKey()
     SummonTiming.log("chat: gave up the keyboard")
+    model.hasKeyboard = false
+  }
+
+  /// A click anywhere on the chat takes the keyboard back. Without this the first click after
+  /// working in another app could land without the panel becoming key, so no cursor showed.
+  override func sendEvent(_ event: NSEvent) {
+    if event.type == .leftMouseDown && !isKeyWindow { makeKey() }
+    super.sendEvent(event)
+    // A click on the text box while something else in the chat held the focus.
+    if event.type == .leftMouseUp, !(firstResponder is NSText), let box = textBox,
+       box.convert(box.bounds, to: nil).contains(event.locationInWindow) {
+      makeFirstResponder(box)
+      putCursorAtEnd(of: box)
+    }
+  }
+
+  private var textBox: NSTextField? {
+    func find(_ view: NSView) -> NSTextField? {
+      if let field = view as? NSTextField, field.isEditable { return field }
+      for sub in view.subviews { if let found = find(sub) { return found } }
+      return nil
+    }
+    return contentView.flatMap(find)
+  }
+
+  /// Puts the blinking cursor in the text box, unless it is already there.
+  private func focusTextBox() {
+    guard let box = textBox, box.currentEditor() == nil else { return }
+    makeFirstResponder(box)
+    putCursorAtEnd(of: box)
+  }
+
+  /// Taking the focus selects everything in the box; typing would then replace it.
+  private func putCursorAtEnd(of box: NSTextField) {
+    box.currentEditor()?.selectedRange = NSRange(location: (box.stringValue as NSString).length, length: 0)
   }
 
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }

@@ -129,4 +129,14 @@ import Testing
     let sneaky = ActionRules.summary(tool: "Bash", input: ["command": "ls\u{1B}[2K\u{202E}"], home: "/Users/x", exists: { _ in false })
     #expect(!sneaky.unicodeScalars.contains("\u{1B}") && !sneaky.unicodeScalars.contains("\u{202E}"))
   }
+  @Test func screenIsOnlySentWhenTheQuestionSoundsLikeItNeedsIt() {
+    for q in ["what is this?", "What does that error mean", "summarize this page", "what am I looking at", "read the highlighted bit"] {
+      #expect(ScreenNeed.likely(q), "\(q)")
+    }
+    for q in ["what is 2+2", "who wrote Hamlet?", "tell me a joke", "how many grams in an ounce"] {
+      #expect(!ScreenNeed.likely(q), "\(q)")
+    }
+    var g = ReplyGate(windowCount: 0, allowLook: false, allowScreen: true); _ = g.feed("LOOK:0"); #expect(g.finish() == .look(0))
+    var h = ReplyGate(windowCount: 3, allowLook: true); _ = h.feed("LOOK:0"); #expect(h.finish() == .unusableMarker)
+  }
 }

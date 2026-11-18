@@ -51,3 +51,11 @@ This replaces the original non-goal "the assistant does not click, type, or chan
 - Checked for real: a Desktop file created after Allow; a second one not created after Don't; a Gmail
   question answered without asking. Not checked: sending email, Google Drive, the Risky only and Never
   levels, and a long-running command.
+
+## Screen only when needed, 2026-11-18
+
+The owner asked that a question like "what is 2+2" not send the screen, while "what is this?" should.
+A word list (`ScreenNeed`) guesses from the question; when it says no, the question goes without a
+screenshot and the assistant can still ask for the screen by replying `LOOK:0`. The chat's text box now
+takes the cursor whenever the panel gets the keyboard, and its edge turns the bubble color while typing
+goes there.

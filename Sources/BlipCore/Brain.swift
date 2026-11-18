@@ -46,7 +46,10 @@ public enum PromptBuilder {
   public static func systemPrompt(_ settings: BlipSettings, home: String? = nil) -> String {
     "You are \(settings.displayName), a tiny pixel creature who flies a spaceship on the user's Mac and answers "
       + "questions about what is on their screen. Each message comes with a screenshot of their screen taken "
-      + "the moment they asked, and a numbered list of their open windows. "
+      + "the moment they asked, and a numbered list of their open windows, but only when the question seems "
+      + "to be about the screen. Answer anything that does not need the screen, like a sum or general "
+      + "knowledge, straight away. If a message has no screenshot and you do need to see the screen to "
+      + "answer it, reply with exactly LOOK:0 and nothing else; you will then get the screenshot and the list. "
       + "\(personality(settings.personality)) \(length(settings.answers)) "
       + "Reply in plain text only: no markdown, no bullet symbols, no headings. If you cannot read something "
       + "because one window is too small or blurry in the screenshot, or the question is about one specific "
@@ -87,6 +90,21 @@ public enum PromptBuilder {
     case .short: return "Keep answers to one to three short sentences."
     case .detailed: return "Give a complete answer with the steps or reasons that matter, in short paragraphs."
     }
+  }
+}
+
+/// Guesses from the question's words whether it is about what is on the screen. A wrong "no" only
+/// costs a moment: the assistant can still ask for the screen.
+public enum ScreenNeed {
+  static let words: Set<String> = [
+    "this", "that", "these", "those", "here", "screen", "window", "windows", "tab", "tabs", "page", "site",
+    "website", "app", "see", "look", "looking", "show", "showing", "shown", "display", "displayed", "front",
+    "error", "popup", "dialog", "button", "image", "picture", "photo", "video", "chart", "graph", "highlighted",
+    "selected", "cursor", "open", "read", "says", "say",
+  ]
+
+  public static func likely(_ question: String) -> Bool {
+    question.lowercased().split(whereSeparator: { !$0.isLetter }).contains { words.contains(String($0)) }
   }
 }
 
@@ -245,12 +263,15 @@ public struct ReplyGate {
 
   private let windowCount: Int
   private let allowLook: Bool
+  /// `LOOK:0` is allowed and means "show me the screen": for a question sent without a screenshot.
+  private let allowScreen: Bool
   private var held = ""
   private var holding = true
 
-  public init(windowCount: Int, allowLook: Bool) {
+  public init(windowCount: Int, allowLook: Bool, allowScreen: Bool = false) {
     self.windowCount = windowCount
     self.allowLook = allowLook
+    self.allowScreen = allowScreen
   }
 
   /// Returns the text that is safe to show now (possibly empty).
@@ -269,8 +290,9 @@ public struct ReplyGate {
     guard holding else { return .text(held) }
     let whole = held.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let match = whole.wholeMatch(of: #/LOOK:(\d+)/#) else { return .text(held) }
-    let n = Int(match.1) ?? 0  // too many digits is still the marker, just not a usable one
-    return allowLook && n >= 1 && n <= windowCount ? .look(n) : .unusableMarker
+    guard let n = Int(match.1) else { return .unusableMarker }  // too many digits: the marker, but unusable
+    if n == 0 { return allowScreen ? .look(0) : .unusableMarker }
+    return allowLook && n <= windowCount ? .look(n) : .unusableMarker
   }
 
   /// Whether the text so far, ignoring leading whitespace, could still grow into the marker.
