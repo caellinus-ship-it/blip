@@ -16,6 +16,12 @@ import BlipCore
   var onThinkingChanged: ((Bool) -> Void)?
   /// The first words of an answer appeared: once per question, never for the hidden close-up exchange.
   var onReplyStarted: (() -> Void)?
+  /// A picture is being taken: `nil` for the whole screen, or the window's frame for a close-up, in
+  /// AppKit screen coordinates (converted from ScreenCaptureKit's top-left-origin global coordinates).
+  var onLooking: ((CGRect?) -> Void)?
+  /// The question ended, once per question: true for a finished answer, false for a problem or a
+  /// window that couldn't be seen clearly.
+  var onOutcome: ((Bool) -> Void)?
 
   private let model = ChatModel()
   private let panel: ChatPanel
@@ -27,6 +33,10 @@ import BlipCore
   private var gate: ReplyGate?
   /// The window list sent with the current question, so a `LOOK:<n>` can find window `n`.
   private var windows: [WindowInfo] = []
+  /// Those windows' frames by ID, as ScreenCaptureKit gave them.
+  private var windowFrames: [UInt32: CGRect] = [:]
+  /// The last question `onOutcome` was called for.
+  private var outcomeFor = 0
   /// Replies the session still owes a `result` line for.
   private var pendingResults = 0
   /// Bumped for every question and on close, so late captures and timers from an older one do nothing.
@@ -145,6 +155,7 @@ import BlipCore
       ScreenCapturer.requestPermission()
       return fail(.noScreenPermission)
     }
+    onLooking?(nil)
     let number = questionNumber
     let displayID = screen.displayID
     Task { @MainActor [weak self] in
@@ -153,6 +164,7 @@ import BlipCore
         let shot = try await ScreenCapturer.captureDisplay(displayID)
         guard let self, self.isCurrent(number, session) else { return }
         self.windows = shot.windows
+        self.windowFrames = shot.windowFrames
         self.gate = ReplyGate(windowCount: min(shot.windows.count, WindowList.limit), allowLook: true)
         self.pendingResults += 1
         session.send(text: text, jpegs: [shot.jpeg], windows: shot.windows)
@@ -168,10 +180,11 @@ import BlipCore
     guard let session else { return }
     let number = questionNumber
     let windowID = windows[n - 1].id
+    onLooking?(windowFrames[windowID].map(ScreenCapturer.appKitRect))
     Task { @MainActor [weak self] in
       let jpeg = try? await ScreenCapturer.captureWindow(id: windowID)
       guard let self, self.isCurrent(number, session) else { return }
-      guard let jpeg else { return self.finish(appending: Self.unclearWindowReply) }
+      guard let jpeg else { return self.finish(appending: Self.unclearWindowReply, ok: false) }
       self.gate = ReplyGate(windowCount: 0, allowLook: false)
       self.pendingResults += 1
       session.send(text: String(format: Self.closeUpRequest, n), jpegs: [jpeg], windows: [])
@@ -250,7 +263,7 @@ import BlipCore
       // A question sent without the screen turned out to need it.
       if let session { sendWithScreen(Self.screenReply, to: session) }
     case .look(let n): sendCloseUp(of: n)
-    case .unusableMarker: finish(appending: Self.unclearWindowReply)
+    case .unusableMarker: finish(appending: Self.unclearWindowReply, ok: false)
     }
   }
 
@@ -309,16 +322,25 @@ import BlipCore
     if first && !model.log.awaitingFirstText { onReplyStarted?() }
   }
 
-  private func finish(appending text: String) {
+  private func finish(appending text: String, ok: Bool = true) {
     show(text)
     model.log.finish()
     stoppedWaiting()
+    tellOutcome(ok)
   }
 
   private func fail(_ problem: BlipProblem) {
     gate = nil
     model.log.fail(problem)
     stoppedWaiting()
+    tellOutcome(false)
+  }
+
+  /// Calls `onOutcome` for the current question, if it hasn't been called for it yet.
+  private func tellOutcome(_ ok: Bool) {
+    guard !closed, outcomeFor != questionNumber else { return }
+    outcomeFor = questionNumber
+    onOutcome?(ok)
   }
 
   private func stoppedWaiting() {

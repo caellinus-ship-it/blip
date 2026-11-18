@@ -39,9 +39,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let conversation, self?.conversation === conversation else { return }
         summon?.thinking = thinking
       }
-      conversation.onReplyStarted = { [weak self, weak conversation] in
+      conversation.onReplyStarted = { [weak self, weak summon, weak conversation] in
         guard let conversation, self?.conversation === conversation else { return }
         sounds.play(Chiptune.reply)
+        summon?.stopReading()
+      }
+      conversation.onLooking = { [weak self, weak summon, weak conversation] rect in
+        guard let conversation, self?.conversation === conversation else { return }
+        sounds.play(Chiptune.scan)
+        summon?.scan(rect)
+      }
+      conversation.onOutcome = { [weak self, weak summon, weak conversation] ok in
+        guard let conversation, self?.conversation === conversation else { return }
+        summon?.stopReading()
+        summon?.react(ok ? .happy : .startled)
+        if !ok { sounds.play(Chiptune.oops) }
       }
       self.conversation = conversation
       SummonTiming.log(String(format: "summon: chat ready %.1f ms after the shortcut",

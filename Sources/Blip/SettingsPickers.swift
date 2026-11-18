@@ -122,6 +122,10 @@ struct TilePicker<Option: Hashable>: View {
           ForEach(rows[r], id: \.option) { item in
             tile(item.option, name: item.name)
           }
+          // A short last row is padded with invisible tiles, so every tile keeps the same width.
+          ForEach(0..<(columns - rows[r].count), id: \.self) { _ in
+            Color.clear.frame(maxWidth: .infinity, maxHeight: 1).accessibilityHidden(true)
+          }
         }
       }
     }

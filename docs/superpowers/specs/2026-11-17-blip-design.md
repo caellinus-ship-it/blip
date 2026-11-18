@@ -377,3 +377,30 @@ change it" **(owner)**.
   everywhere, and says so when a combination is already taken; the Start at
   login switch shows the real system state; an empty custom personality
   falls back to playful.
+
+## Addendum, 2026-11-18: a livelier Blip
+
+- **Christmas set.** Three new creatures, Santa, Snowman and Reindeer, a
+  Sleigh ship (gold scrolls and runners, red body, a band in the trail
+  color) and a Snow trail (flakes of three sizes drifting slowly down with
+  a sideways sway, flickering out at the end). The new creatures have their
+  own aura colors, used unless the owner picks one. The cat's whiskers no
+  longer vanish when it blinks. Settings shows the creature and trail tiles
+  in rows of four and the ships in rows of three.
+- **Eyes follow the pointer.** The eyes turn toward the mouse in eight
+  directions, both on screen and on the settings stage, and look straight
+  ahead when the pointer is on the face. Two-eyed creatures move each eye
+  one pixel; the alien's pupil slides inside its frame.
+- **Moods,** shown only while hovering, highest first: startled (a quick
+  hop, wide eyes and a yellow "!") when a question fails; happy (two small
+  hops, arched eyes, sparkles above the head) when an answer finishes;
+  reading (narrowed eyes glancing left and right) while the screen is being
+  looked at; sleepy after a quiet spell: a yawn at about 25 seconds, asleep
+  at about 45 with shut eyes, drifting "z"s and a slower aura. Moving the
+  pointer, a new question, dragging or any reaction wakes it.
+- **Scan beam.** When the assistant takes a picture, viewfinder brackets
+  frame the area (the whole screen, or the window it is looking at closely)
+  and a scan line sweeps down it in the trail colors, with a quick rising
+  trill. A problem plays two falling low notes.
+- **Settings.** A Behavior panel with three switches, all on by default:
+  Eyes follow the pointer, Moods, Scan beam.

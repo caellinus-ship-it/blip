@@ -19,6 +19,8 @@ final class SummonController: NSObject {
   /// replaced it, or its display was unplugged. Called exactly once per summon.
   var onDismissed: (() -> Void)?
   var thinking = false { didSet { scene?.thinking = thinking } }
+  /// The creature is looking at the screen; kept when the summon moves to another display.
+  private var reading = false { didSet { scene?.reading = reading } }
   /// When the shortcut that started the current summon was pressed (`CACurrentMediaTime`).
   private(set) var pressedAt: CFTimeInterval = 0
   /// Half the width of the ship and its creature, in points.
@@ -70,6 +72,7 @@ final class SummonController: NSObject {
       // still lingering in `.gone`. Either way that summon is over.
       endSummon()
       thinking = false
+      reading = false
       if let s = screenUnderPointer() ?? NSScreen.main {
         summonSettings = settings()
         start(on: s, hovering: nil)
@@ -78,6 +81,7 @@ final class SummonController: NSObject {
     case .dismiss:
       announced = true  // sent back before its first frame: it never gets a chat
       timing.flyOffStarted()
+      reading = false
       scene?.dismiss()
       onFlyOff?()
     case .none:
@@ -96,6 +100,7 @@ final class SummonController: NSObject {
     var sc = BlipCore.Scene(
       settings: s, bufferWidth: w.buffer.width, bufferHeight: w.buffer.height, seed: Self.clockSeed())
     sc.thinking = thinking
+    sc.reading = reading
     if let hovering {
       for _ in 0..<Self.settleTicks { sc.tick() }
       let p = w.arcadePixel(atScreenPoint: hovering.pointer)
@@ -153,8 +158,29 @@ final class SummonController: NSObject {
     let displays = NSScreen.screens.compactMap(\.displayID)
     guard SummonState.endsOnDisplayChange(shipDisplay: displayID, displays: displays) else { return }
     thinking = false
+    reading = false
     endSummon()
   }
+
+  // MARK: Looking and moods
+
+  /// The assistant is taking a picture of `screenRect` (AppKit screen coordinates; `nil` for the whole
+  /// display the ship is on): the creature starts reading and a scan beam sweeps that area.
+  func scan(_ screenRect: CGRect?) {
+    guard let w = window, scene != nil else { return }
+    reading = true
+    guard let r = screenRect else { return scene!.scan(nil) }
+    // Arcade pixels run down from the window's top-left; screen points run up from the bottom.
+    let topLeft = w.arcadePixel(atScreenPoint: CGPoint(x: r.minX, y: r.maxY))
+    let p = CGFloat(w.pointsPerPixel)
+    scene!.scan((topLeft.x, topLeft.y, Int((r.width / p).rounded(.up)), Int((r.height / p).rounded(.up))))
+  }
+
+  /// The creature stops reading: the first words of the answer showed, or the question ended.
+  func stopReading() { reading = false }
+
+  /// Shows a reaction on the creature.
+  func react(_ reaction: BlipCore.Scene.Reaction) { scene?.react(reaction) }
 
   // MARK: Frames
 
@@ -176,6 +202,7 @@ final class SummonController: NSObject {
     } else {
       accumulator -= Double(ticks) * Self.tickSeconds
     }
+    scene!.look(at: w.arcadePixel(atScreenPoint: NSEvent.mouseLocation))
     guard ticks > 0 else {
       w.updateMouseAcceptance()
       return

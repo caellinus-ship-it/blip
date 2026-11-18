@@ -47,11 +47,13 @@ struct CharacterPreview: NSViewRepresentable {
       var creature: Creature, ship: Ship, trail: TrailStyle, trailColor: TrailColor
       var auraColor: RGBA?, hover: HoverMotion, size: SizeOption
       var entryEffect: EntryEffect, flightPath: FlightPath, flightSpeed: FlightSpeed, aura: AuraStyle
+      var followPointer: Bool, moods: Bool, scanBeam: Bool
 
       init(_ s: BlipSettings) {
         (creature, ship, trail, trailColor, auraColor, hover, size) =
           (s.creature, s.ship, s.trail, s.trailColor, s.auraColor, s.hover, s.size)
         (entryEffect, flightPath, flightSpeed, aura) = (s.entryEffect, s.flightPath, s.flightSpeed, s.aura)
+        (followPointer, moods, scanBeam) = (s.followPointer, s.moods, s.scanBeam)
       }
 
       /// True when going from `old` to this look only picked a new custom trail color or aura color,
@@ -205,9 +207,21 @@ struct CharacterPreview: NSViewRepresentable {
       } else {
         accumulator -= Double(ticks) * Self.tickSeconds
       }
+      scene.look(at: pointerPixel())
       guard ticks > 0 else { return }
       for _ in 0..<ticks { scene.tick() }
       render()
+    }
+
+    /// The mouse in the scene's buffer pixels (it may be outside the buffer), so the eyes follow it
+    /// anywhere on screen; `nil` when the view is not in a window.
+    private func pointerPixel() -> (x: Int, y: Int)? {
+      guard let window else { return nil }
+      let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+      let p = pixelLayer.convert(convert(inWindow, from: nil), from: layer)
+      let ppp = CGFloat(settings.size.pointsPerPixel)
+      // The layer's y runs up from its bottom; the buffer's runs down from its top.
+      return (Int((p.x / ppp).rounded(.down)), Int(((pixelLayer.bounds.height - p.y) / ppp).rounded(.down)))
     }
 
     // MARK: Drawing

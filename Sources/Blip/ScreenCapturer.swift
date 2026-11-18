@@ -9,6 +9,9 @@ struct Capture {
   let jpeg: Data
   /// On-screen app windows on that display, front to back, never Blip's own.
   let windows: [WindowInfo]
+  /// Each listed window's frame by its ID, as ScreenCaptureKit gives it: global display coordinates
+  /// in points, origin at the top-left of the main display, y running down.
+  let windowFrames: [UInt32: CGRect]
 }
 
 enum CaptureError: Error {
@@ -40,7 +43,9 @@ enum ScreenCapturer {
                                  exceptingWindows: [])
     let image = try await SCScreenshotManager.captureImage(contentFilter: filter,
                                                            configuration: configuration(for: filter))
-    return Capture(jpeg: try jpeg(image), windows: windows(in: content, on: CGDisplayBounds(displayID)))
+    let listed = windows(in: content, on: CGDisplayBounds(displayID))
+    return Capture(jpeg: try jpeg(image), windows: listed.map(\.info),
+                   windowFrames: Dictionary(listed.map { ($0.info.id, $0.frame) }) { first, _ in first })
   }
 
   /// One window by itself, at its native pixel size capped at the long edge, as JPEG.
@@ -83,8 +88,18 @@ enum ScreenCapturer {
     return app.bundleIdentifier == ownBundleID
   }
 
-  /// On-screen, layer-0 windows of other apps that are big enough and overlap the display, front to back.
-  private static func windows(in content: SCShareableContent, on displayBounds: CGRect) -> [WindowInfo] {
+  /// Converts a ScreenCaptureKit frame (global display coordinates, top-left origin, y down) to
+  /// AppKit screen coordinates (bottom-left origin of the main display, y up).
+  static func appKitRect(_ frame: CGRect) -> CGRect {
+    let mainHeight = CGDisplayBounds(CGMainDisplayID()).height
+    return CGRect(x: frame.minX, y: mainHeight - frame.maxY, width: frame.width, height: frame.height)
+  }
+
+  /// On-screen, layer-0 windows of other apps that are big enough and overlap the display, front to
+  /// back, each with its ScreenCaptureKit frame.
+  private static func windows(in content: SCShareableContent, on displayBounds: CGRect)
+    -> [(info: WindowInfo, frame: CGRect)]
+  {
     let candidates = content.windows.filter { window in
       guard let app = window.owningApplication, !isBlip(app) else { return false }
       return window.isOnScreen && window.windowLayer == 0
@@ -96,9 +111,10 @@ enum ScreenCapturer {
       .enumerated()
       .sorted { (order[$0.element.windowID] ?? Int.max, $0.offset) < (order[$1.element.windowID] ?? Int.max, $1.offset) }
       .map { _, window in
-        WindowInfo(id: window.windowID,
-                   app: printable(window.owningApplication?.applicationName ?? ""),
-                   title: printable(window.title ?? ""))
+        (WindowInfo(id: window.windowID,
+                    app: printable(window.owningApplication?.applicationName ?? ""),
+                    title: printable(window.title ?? "")),
+         window.frame)
       }
   }
 

@@ -98,23 +98,28 @@ struct SettingsView: View {
       SettingsPanel(title: "Creature") {
         TilePicker(
           label: "Creature",
-          options: [(.blob, "Blob"), (.ghost, "Ghost"), (.cat, "Cat"), (.alien, "Alien")],
+          options: [
+            (.blob, "Blob"), (.ghost, "Ghost"), (.cat, "Cat"), (.alien, "Alien"),
+            (.santa, "Santa"), (.snowman, "Snowman"), (.reindeer, "Reindeer"),
+          ],
           images: ThumbnailImages.creatures, scale: 4, columns: 4, selection: settings.creature, accent: accent)
       }
       SettingsPanel(title: "Ship") {
         TilePicker(
           label: "Ship",
-          options: [(.rocket, "Rocket"), (.saucer, "Saucer"), (.pod, "Bubble pod"), (.star, "Star ship")],
-          images: ThumbnailImages.ships, scale: 3, columns: 4, selection: settings.ship, accent: accent)
+          options: [
+            (.rocket, "Rocket"), (.saucer, "Saucer"), (.pod, "Bubble pod"), (.star, "Star ship"), (.sleigh, "Sleigh"),
+          ],
+          images: ThumbnailImages.ships, scale: 3, columns: 3, selection: settings.ship, accent: accent)
       }
       SettingsPanel(title: "Trail") {
         TilePicker(
           label: "Trail",
           options: [
-            (.comet, "Comet"), (.flame, "Flame"), (.rings, "Smoke rings"),
-            (.echoes, "Echoes"), (.lightning, "Lightning"), (.confetti, "Confetti"),
+            (.comet, "Comet"), (.flame, "Flame"), (.rings, "Smoke rings"), (.echoes, "Echoes"),
+            (.lightning, "Lightning"), (.confetti, "Confetti"), (.snow, "Snow"),
           ],
-          images: ThumbnailImages.trails(ColorRamp(store.settings.trailColor)), scale: 2, columns: 3,
+          images: ThumbnailImages.trails(ColorRamp(store.settings.trailColor)), scale: 2, columns: 4,
           selection: settings.trail, accent: accent)
       }
       colors
@@ -144,6 +149,7 @@ struct SettingsView: View {
           segmented("Motion", settings.hover, [(.figure8, "Figure 8"), (.bob, "Simple bob"), (.still, "Still")])
         }
       }
+      behavior
       assistant
       app
     }
@@ -170,6 +176,24 @@ struct SettingsView: View {
         ColorPicker("Bubble color", selection: bubbleColor, supportsOpacity: false)
           .labelsHidden()
       }
+    }
+  }
+
+  private var behavior: some View {
+    SettingsPanel(title: "Behavior") {
+      switchRow("Eyes follow the pointer", settings.followPointer)
+      switchRow("Moods", settings.moods)
+      switchRow("Scan beam", settings.scanBeam)
+    }
+  }
+
+  /// A label and an on/off switch, like the App panel's.
+  private func switchRow(_ label: String, _ isOn: Binding<Bool>) -> some View {
+    SettingRow(label: label) {
+      Toggle(label, isOn: isOn)
+        .toggleStyle(.switch)
+        .labelsHidden()
+        .accessibilityLabel(label)
     }
   }
 
@@ -309,13 +333,13 @@ struct SettingsView: View {
     Binding(
       get: { store.settings.auraColor == nil },
       set: { matches in
-        store.settings.auraColor = matches ? nil : Art.creature(store.settings.creature).body
+        store.settings.auraColor = matches ? nil : Art.creature(store.settings.creature).auraOuter
       })
   }
 
   private var auraColor: Binding<Color> {
     Binding(
-      get: { Color(rgba: store.settings.auraColor ?? Art.creature(store.settings.creature).body) },
+      get: { Color(rgba: store.settings.auraColor ?? Art.creature(store.settings.creature).auraOuter) },
       set: { store.settings.auraColor = $0.rgba })
   }
 
