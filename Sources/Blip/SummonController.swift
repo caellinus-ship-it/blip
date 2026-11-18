@@ -6,7 +6,8 @@ import BlipCore
 /// overlay once the ship has flown off.
 @MainActor
 final class SummonController: NSObject {
-  /// A new summon began on this screen; the ship is starting its fly-in.
+  /// A new summon began on this screen: its first frame is out and the ship is starting its fly-in.
+  /// Called from the overlay's first display-link callback, so nothing built here holds up that frame.
   var onSummoned: ((NSScreen) -> Void)?
   /// The ship has finished flying in; the point is the hover anchor in screen coordinates.
   var onArrived: ((NSScreen, CGPoint) -> Void)?
@@ -18,6 +19,8 @@ final class SummonController: NSObject {
   /// replaced it. Called exactly once per summon.
   var onDismissed: (() -> Void)?
   var thinking = false { didSet { scene?.thinking = thinking } }
+  /// When the shortcut that started the current summon was pressed (`CACurrentMediaTime`).
+  private(set) var pressedAt: CFTimeInterval = 0
   /// Half the width of the ship and its creature, in points.
   var shipHalfWidth: CGFloat {
     guard let w = window, let sc = scene else { return 0 }
@@ -40,24 +43,32 @@ final class SummonController: NSObject {
   private var lastTimestamp: CFTimeInterval?
   private var accumulator: CFTimeInterval = 0
   private var arrived = false
+  /// `onSummoned` has been called for the current summon.
+  private var announced = true
   private var blankTicks = 0
+  private var timing = SummonTiming()
 
   init(settings: @escaping () -> BlipSettings) {
     self.settings = settings
   }
 
-  func shortcutPressed() {
+  /// `pressedAt` is when the shortcut was taken (`CACurrentMediaTime`), for the debug timing log.
+  func shortcutPressed(at pressedAt: CFTimeInterval = CACurrentMediaTime()) {
     switch SummonState.onShortcut(phase: scene?.phase) {
     case .start, .restart:
+      self.pressedAt = pressedAt
+      timing.summoned(at: pressedAt)
       // A restart throws away a ship that is flying off; a start may find one
       // still lingering in `.gone`. Either way that summon is over.
       endSummon()
       thinking = false
       if let s = screenUnderPointer() ?? NSScreen.main {
         start(on: s, hoveringAt: nil)
-        onSummoned?(s)
+        announced = false
       }
     case .dismiss:
+      announced = true  // sent back before its first frame: it never gets a chat
+      timing.flyOffStarted()
       scene?.dismiss()
       onFlyOff?()
     case .none:
@@ -122,6 +133,11 @@ final class SummonController: NSObject {
 
   @objc private func frame(_ link: CADisplayLink) {
     guard scene != nil, let w = window, let screen else { return }
+    timing.frame(phase: scene!.phase)
+    if !announced {
+      announced = true
+      onSummoned?(screen)
+    }
 
     if w.isDragging, let other = screenUnderPointer(), other.frame != screen.frame {
       moveToScreen(other)
@@ -201,5 +217,67 @@ final class SummonController: NSObject {
 
   private static func clockSeed() -> UInt64 {
     UInt64(Date().timeIntervalSince1970 * 1000)
+  }
+}
+
+/// Debug switch `BLIP_DEBUG=1`: how soon after the shortcut the overlay's first frame comes, and the
+/// longest gap between frames over each fly-in and fly-off, go to Blip's stderr.
+struct SummonTiming {
+  static let on = ProcessInfo.processInfo.environment["BLIP_DEBUG"] == "1"
+
+  private var pressedAt: CFTimeInterval?
+  private var lastFrame: CFTimeInterval?
+  private var longestGap: CFTimeInterval = 0
+  /// When the longest gap ended, from the start of the flight.
+  private var longestGapAt: CFTimeInterval = 0
+  /// Gaps of more than one and a half frames.
+  private var longGaps = 0
+  private var flightStart: CFTimeInterval = 0
+  /// The flight being watched: `.flyIn` or `.flyOut`.
+  private var flight: Phase?
+
+  mutating func summoned(at time: CFTimeInterval) {
+    guard Self.on else { return }
+    pressedAt = time
+    lastFrame = nil
+    startFlight(.flyIn, at: time)
+  }
+
+  mutating func flyOffStarted() {
+    guard Self.on else { return }
+    startFlight(.flyOut, at: CACurrentMediaTime())
+  }
+
+  private mutating func startFlight(_ phase: Phase, at time: CFTimeInterval) {
+    flight = phase
+    flightStart = time
+    longestGap = 0
+    longestGapAt = 0
+    longGaps = 0
+  }
+
+  /// A display-link callback, before the scene ticks.
+  mutating func frame(phase: Phase) {
+    guard Self.on else { return }
+    let now = CACurrentMediaTime()
+    if let pressedAt {
+      Self.log(String(format: "summon: first frame callback %.1f ms after the shortcut", (now - pressedAt) * 1000))
+      self.pressedAt = nil
+    }
+    if let lastFrame {
+      let gap = now - lastFrame
+      if gap > 1.5 / 60 { longGaps += 1 }
+      if gap > longestGap { (longestGap, longestGapAt) = (gap, now - flightStart) }
+    }
+    lastFrame = now
+    if flight == .flyIn && phase != .flyIn || flight == .flyOut && phase == .gone {
+      Self.log(String(format: "%@: longest gap between frames %.1f ms, ending %.0f ms in; %d gaps over 25 ms",
+                      flight == .flyIn ? "fly-in" : "fly-off", longestGap * 1000, longestGapAt * 1000, longGaps))
+      flight = nil
+    }
+  }
+
+  static func log(_ line: String) {
+    if on { FileHandle.standardError.write(Data("\(line)\n".utf8)) }
   }
 }

@@ -40,6 +40,16 @@ final class ChatPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
+  override func becomeKey() {
+    super.becomeKey()
+    SummonTiming.log("chat: has the keyboard")
+  }
+
+  override func resignKey() {
+    super.resignKey()
+    SummonTiming.log("chat: gave up the keyboard")
+  }
+
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
   /// Blip has no Edit menu, and is never the active app, so the usual editing shortcuts would find

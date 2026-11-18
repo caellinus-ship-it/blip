@@ -13,6 +13,8 @@ final class BrainSession {
   private let output = Pipe()
   /// Writes can block on a full pipe, so they run off the main thread, in order.
   private let writeQueue = DispatchQueue(label: "com.blip.assistant.brain-write")
+  /// Launching and terminating the process run here, in order, off the main thread.
+  private let launchQueue = DispatchQueue(label: "com.blip.assistant.brain-launch")
   private var lines = LineBuffer()
   private var stopped = false
   private var outputEnded = false
@@ -24,6 +26,7 @@ final class BrainSession {
   /// Debug switch `BLIP_DEBUG=1`: each launch, the child's stderr and every parsed event go to Blip's stderr.
   private static let debug = ProcessInfo.processInfo.environment["BLIP_DEBUG"] == "1"
 
+  /// Nil when no `claude` executable is found. The process starts shortly after, off the main thread.
   init?(settings: BlipSettings) {
     var environment = ProcessInfo.processInfo.environment
     // Debug switch `BLIP_NO_CLAUDE=1`: behave as if the tool were missing.
@@ -52,22 +55,41 @@ final class BrainSession {
     // A write to a process that already died must fail as an error, not kill Blip with SIGPIPE.
     signal(SIGPIPE, SIG_IGN)
 
-    output.fileHandleForReading.readabilityHandler = { [self] handle in
-      let chunk = handle.availableData
-      if chunk.isEmpty { handle.readabilityHandler = nil }
-      DispatchQueue.main.async { chunk.isEmpty ? self.outputDidEnd() : self.consume(chunk) }
+    // Neither handler holds the session, so a session nobody uses any more is freed with its pipes.
+    // The reading end is held by its own handler until the output ends, then closed there, on the
+    // handler's queue, so it is never closed under a read in progress.
+    let reader = output.fileHandleForReading
+    reader.readabilityHandler = { [weak self] _ in
+      let chunk = reader.availableData
+      if chunk.isEmpty {
+        reader.readabilityHandler = nil
+        try? reader.close()
+      }
+      DispatchQueue.main.async { chunk.isEmpty ? self?.outputDidEnd() : self?.consume(chunk) }
     }
-    process.terminationHandler = { [self] _ in
-      DispatchQueue.main.async { self.processDidExit() }
+    process.terminationHandler = { [weak self] _ in
+      DispatchQueue.main.async { self?.processDidExit() }
     }
 
-    do {
-      try process.run()
-    } catch {
-      output.fileHandleForReading.readabilityHandler = nil
-      return nil
+    // Starting a process takes milliseconds the 60 Hz animation can't spare, so it happens off the
+    // main thread. A launch that fails is reported like an exit.
+    let process = self.process
+    launchQueue.async { [weak self] in
+      do {
+        try process.run()
+        if Self.debug { FileHandle.standardError.write(Data("BrainSession launched \(claude) pid \(process.processIdentifier)\n".utf8)) }
+      } catch {
+        NSLog("Blip: could not start \(claude) (\(error))")
+        reader.readabilityHandler = nil
+        try? reader.close()
+        DispatchQueue.main.async { self?.launchFailed() }
+      }
     }
-    if Self.debug { FileHandle.standardError.write(Data("BrainSession launched \(claude) pid \(process.processIdentifier)\n".utf8)) }
+  }
+
+  /// Everyone stops a session before letting go of it; this only makes sure no `claude` outlives it.
+  deinit {
+    stop()
   }
 
   var isRunning: Bool { process.isRunning }
@@ -90,11 +112,13 @@ final class BrainSession {
     stopped = true
     onEvent = nil
     onExit = nil
+    process.terminationHandler = nil
     let handle = input.fileHandleForWriting
-    // Terminating first unblocks a write stuck on a full pipe, so the close behind it can run.
-    if process.isRunning { process.terminate() }
-    writeQueue.async { try? handle.close() }
     let process = self.process
+    // After the launch, if it is still under way. Terminating unblocks a write stuck on a full pipe,
+    // so the close behind it can run. The output's end closes the reading end.
+    launchQueue.async { if process.isRunning { process.terminate() } }
+    writeQueue.async { try? handle.close() }
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.killDelay) {
       if process.isRunning { kill(process.processIdentifier, SIGKILL) }
     }
@@ -116,17 +140,25 @@ final class BrainSession {
   private func processDidExit() {
     exited = true
     // The output normally ends with the process; don't wait forever if a stray child keeps it open.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
-      outputEnded = true
-      reportExitIfFinished()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+      self?.outputEnded = true
+      self?.reportExitIfFinished()
     }
+    reportExitIfFinished()
+  }
+
+  private func launchFailed() {
+    exited = true
+    outputEnded = true
     reportExitIfFinished()
   }
 
   private func reportExitIfFinished() {
     guard exited, outputEnded, !stopped else { return }
     stopped = true
-    output.fileHandleForReading.readabilityHandler = nil
+    process.terminationHandler = nil
+    let handle = input.fileHandleForWriting
+    writeQueue.async { try? handle.close() }
     let callback = onExit
     onEvent = nil
     onExit = nil
@@ -156,11 +188,17 @@ final class BrainSession {
     return session
   }
 
-  /// Stops a session that is done with and gets a fresh standby ready.
+  /// Stops a session that is done with and gets a fresh standby ready on the next main-queue turn, so
+  /// a dismiss that lets one go has started the fly-off first.
   func release(_ session: BrainSession) {
     session.stop()
     taken.removeAll { $0 === session }
-    if standby == nil && !isShutDown { standby = startStandby() }
+    DispatchQueue.main.async { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self, self.standby == nil, !self.isShutDown else { return }
+        self.standby = self.startStandby()
+      }
+    }
   }
 
   /// Stops every session, idle or in use, and starts no more. For quitting, so no `claude` outlives Blip.

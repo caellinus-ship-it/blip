@@ -43,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sounds.play(Chiptune.reply)
       }
       self.conversation = conversation
+      SummonTiming.log(String(format: "summon: chat ready %.1f ms after the shortcut",
+                              (CACurrentMediaTime() - (summon?.pressedAt ?? 0)) * 1000))
     }
     summon.onArrived = { [weak self, weak summon] screen, anchor in
       self?.conversation?.shipArrived(on: screen, anchor: anchor, shipHalfWidth: summon?.shipHalfWidth ?? 0)
@@ -103,8 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   @MainActor @objc private func summonPressed() {
+    let pressedAt = CACurrentMediaTime()
     flushBrainRestart()  // so a summon right after a name or personality change already uses it
-    summon?.shortcutPressed()
+    summon?.shortcutPressed(at: pressedAt)
+    SummonTiming.log(String(format: "shortcut: main thread held %.1f ms", (CACurrentMediaTime() - pressedAt) * 1000))
   }
 
   /// Runs a pending standby restart now instead of after the quiet period.
