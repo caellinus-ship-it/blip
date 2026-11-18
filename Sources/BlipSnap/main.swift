@@ -1,6 +1,7 @@
 // blip-snap: renders one Scene frame to a PNG so the look can be checked by eye.
 //
-//   blip-snap --creature <c> --ship <s> --trail <t> --color <preset> --tick <n> --out <file.png> [--thinking]
+//   blip-snap --creature <c> --ship <s> --trail <t> --color <preset> --tick <n> --out <file.png>
+//             [--dismiss <tick>] [--thinking]
 
 import BlipCore
 import CoreGraphics
@@ -17,7 +18,7 @@ let usage = """
                    --ship <\(Ship.allCases.map(\.rawValue).joined(separator: "|"))>
                    --trail <\(TrailStyle.allCases.map(\.rawValue).joined(separator: "|"))>
                    --color <\(colorPresets.keys.sorted().joined(separator: "|"))>
-                   --tick <n> --out <file.png> [--thinking]
+                   --tick <n> --out <file.png> [--dismiss <tick>] [--thinking]
   """
 
 func fail(_ message: String) -> Never {
@@ -32,6 +33,7 @@ func parse<T>(_ flag: String, _ value: String, _ make: (String) -> T?) -> T {
 
 var settings = BlipSettings()
 var ticks = 60
+var dismissAt: Int?
 var outPath: String?
 var thinking = false
 
@@ -46,6 +48,7 @@ while let flag = args.next() {
   case "--color": settings.trailColor = parse(flag, value) { colorPresets[$0] }
   case "--tick": ticks = parse(flag, value) { Int($0).flatMap { $0 >= 0 ? $0 : nil } }
   case "--out": outPath = value
+  case "--dismiss": dismissAt = parse(flag, value) { Int($0).flatMap { $0 >= 0 ? $0 : nil } }
   default: fail("unknown option \(flag)")
   }
 }
@@ -53,7 +56,10 @@ guard let outPath else { fail("--out is required") }
 
 var scene = Scene(settings: settings, bufferWidth: bufferWidth, bufferHeight: bufferHeight, seed: 1)
 scene.thinking = thinking
-for _ in 0..<ticks { scene.tick() }
+for t in 0..<ticks {
+  if t == dismissAt { scene.dismiss() }
+  scene.tick()
+}
 
 var buffer = PixelBuffer(width: bufferWidth, height: bufferHeight)
 buffer.fill(x: 0, y: 0, w: bufferWidth, h: bufferHeight, background)

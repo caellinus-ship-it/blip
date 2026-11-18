@@ -79,9 +79,16 @@ public struct TrailSystem {
   /// all zero for the other styles.
   public var boltLengths: [Int] { bolts.map(\.count) }
 
+  /// True when nothing is left to draw: no particles, and no flame or bolts.
+  public var isEmpty: Bool {
+    particles.isEmpty && flame.isEmpty && sparks.isEmpty && bolts.allSatisfy(\.isEmpty)
+  }
+
   /// Advances the trail one tick. `(shipX, shipY)` is the top-centre of the
-  /// ship; `exhaustY` is the row just below it.
-  public mutating func tick(shipX: Int, shipY: Int, exhaustY: Int, flying: Bool) {
+  /// ship; `exhaustY` is the row just below it. With `emitting` false (the
+  /// ship has gone) nothing new appears: particles already out keep moving and
+  /// ageing, and the flame and bolts, which hang off the ship, go out.
+  public mutating func tick(shipX: Int, shipY: Int, exhaustY: Int, flying: Bool, emitting: Bool = true) {
     tickCount += 1
     power += ((flying ? 1 : 0) - power) * 0.035
     self.shipX = shipX
@@ -89,6 +96,13 @@ public struct TrailSystem {
     self.exhaustY = exhaustY
     particles.removeAll { Double($0.age) >= $0.life }
 
+    guard emitting else {
+      flame = []
+      sparks = []
+      bolts = [[], [], []]
+      ageParticles()
+      return
+    }
     switch style {
     case .comet: tickComet()
     case .flame: tickFlame()
@@ -125,11 +139,7 @@ public struct TrailSystem {
 
   private mutating func tickComet() {
     particles.append(Particle(x: Double(shipX), y: Double(exhaustY), life: 28 + 18 * power))
-    let fall = 0.5 + 0.5 * power
-    for i in particles.indices {
-      particles[i].age += 1
-      particles[i].y += fall
-    }
+    ageParticles()
   }
 
   private mutating func tickFlame() {
@@ -150,22 +160,14 @@ public struct TrailSystem {
     if spawnDue(every: Int((26 - 18 * power).rounded())) {
       particles.append(Particle(x: Double(shipX), y: Double(exhaustY), life: 44))
     }
-    let fall = 0.4 + 0.33 * power
-    for i in particles.indices {
-      particles[i].age += 1
-      particles[i].y += fall
-    }
+    ageParticles()
   }
 
   private mutating func tickEchoes() {
     if tickCount % 4 == 0 {
       particles.append(Particle(x: Double(shipX), y: Double(shipY), life: 24))
     }
-    let drift = 0.53 * (1 - power)
-    for i in particles.indices {
-      particles[i].age += 1
-      particles[i].y += drift
-    }
+    ageParticles()
   }
 
   private mutating func tickLightning() {
@@ -190,11 +192,23 @@ public struct TrailSystem {
       particles.append(
         Particle(x: x, y: Double(exhaustY), life: 36 + 24 * power, vx: vx, vy: vy, shape: shape, tint: tint))
     }
+    ageParticles()
+  }
+
+  /// Moves every particle on by one tick, the way its style moves it.
+  private mutating func ageParticles() {
     for i in particles.indices {
       particles[i].age += 1
-      let p = particles[i]
-      particles[i].x += p.vx + sin(Double(p.age + p.shape * 9) / 6) * 0.27
-      particles[i].y += p.vy
+      switch style {
+      case .comet: particles[i].y += 0.5 + 0.5 * power
+      case .rings: particles[i].y += 0.4 + 0.33 * power
+      case .echoes: particles[i].y += 0.53 * (1 - power)
+      case .confetti:
+        let p = particles[i]
+        particles[i].x += p.vx + sin(Double(p.age + p.shape * 9) / 6) * 0.27
+        particles[i].y += p.vy
+      case .flame, .lightning: break
+      }
     }
   }
 
@@ -271,7 +285,7 @@ public struct TrailSystem {
         if f < (isMiddle ? 0.55 : 0.3) { b.fill(x: x, y: y, w: 1, h: 1, ramp.white) }
       }
     }
-    if tickCount % 4 < 2 { b.fill(x: shipX - 5, y: exhaustY, w: 10, h: 1, ramp.white) }
+    if tickCount % 4 < 2 && !bolts[1].isEmpty { b.fill(x: shipX - 5, y: exhaustY, w: 10, h: 1, ramp.white) }
   }
 
   private func drawConfetti(into b: inout PixelBuffer, ramp: ColorRamp) {

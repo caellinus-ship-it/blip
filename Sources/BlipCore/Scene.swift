@@ -10,8 +10,17 @@ public struct Scene {
   static let thinkingStepTicks = 6
   /// Ticks the creature spends on each bob height.
   static let bobTicks = 30
-  /// Ticks the trail keeps running after the ship is gone, so the fly-off is not cut short.
+  /// The most ticks the trail and the comet keep running after the ship is
+  /// gone, so the fly-off is not cut short; the linger ends sooner once
+  /// neither has anything left to draw.
   static let lingerTicks = 60
+  /// Ticks of launch shake at the start of the fly-in, alternating 1 px right and left.
+  static let shakeTicks = 10
+  /// On arrival the ship carries on up past its hover point, `overshoot`
+  /// pixels over `overshootTicks`, then settles back down over `settleTicks`.
+  static let overshoot = 2
+  static let overshootTicks = 8
+  static let settleTicks = 12
   /// Half the width of the body the comet fire wraps.
   static let cometHalfWidth = 12
 
@@ -23,11 +32,13 @@ public struct Scene {
   public var thinking = false
 
   public var phase: Phase { motion.phase }
+  /// The ship is gone and its trail and comet have nothing left to draw, or the linger ran out.
+  public var isFinished: Bool { motion.phase == .gone && !lingering }
   /// The hover centre.
   public var anchor: (x: Int, y: Int) { (motion.anchorX, motion.anchorY) }
-  /// The rectangle covering the creature and the ship.
+  /// The rectangle covering the creature and the ship, where they are drawn.
   public var hitRect: (x: Int, y: Int, w: Int, h: Int) {
-    (motion.x - 12, motion.y - 12, 24, 12 + shipSprite.height)
+    (shipX - 12, shipY - 12, 24, 12 + shipSprite.height)
   }
 
   private let creature: CreatureArt
@@ -39,10 +50,21 @@ public struct Scene {
   private var trail: TrailSystem
   /// The fire around the ship in flight; `nil` when the comet setting is off.
   private var shroud: CometShroud?
+  private let bufferHeight: Int
   private var ticks = 0
   private var step = 0
   private var ticksIntoStep = 0
   private var goneTicks = 0
+  private var lingering = true
+  /// Ticks since the fly-in reached the hover point; `nil` before then.
+  private var landedTicks: Int?
+  /// Where the ship is drawn: its motion plus the launch shake and the arrival overshoot.
+  private var shipX: Int
+  private var shipY: Int
+  /// Where the comet fire is drawn. It stays at the ship's last place on screen
+  /// once the ship is gone, so the tail can finish leaving.
+  private var shroudX: Int
+  private var shroudY: Int
 
   public init(settings: BlipSettings, bufferWidth: Int, bufferHeight: Int, seed: UInt64) {
     creature = Art.creature(settings.creature)
@@ -53,13 +75,14 @@ public struct Scene {
     motion = ShipMotion(bufferWidth: bufferWidth, bufferHeight: bufferHeight, hover: settings.hover)
     trail = TrailSystem(style: settings.trail, seed: seed)
     shroud = settings.comet ? CometShroud(seed: seed ^ 0x636F_6D65_74) : nil  // "comet", so it differs from the trail's
+    self.bufferHeight = bufferHeight
+    (shipX, shipY) = (motion.x, motion.y)
+    (shroudX, shroudY) = (shipX, shipY)
   }
 
   public mutating func tick() {
-    if motion.phase == .gone {
-      guard goneTicks < Self.lingerTicks else { return }
-      goneTicks += 1
-    }
+    guard lingering else { return }
+    if motion.phase == .gone { goneTicks += 1 }
     ticks += 1
     ticksIntoStep += 1
     if ticksIntoStep >= (thinking ? Self.thinkingStepTicks : Self.stepTicks) {
@@ -68,9 +91,50 @@ public struct Scene {
     }
     let lastY = motion.y
     motion.tick()
-    shroud?.tick(flying: motion.flying, velocityY: motion.y - lastY)
+    let gone = motion.phase == .gone
+    if let t = landedTicks {
+      if t < Self.overshootTicks + Self.settleTicks { landedTicks = t + 1 }
+    } else if (motion.phase == .flyIn && motion.y == motion.anchorY) || motion.phase == .hover {
+      landedTicks = 0
+    }
+    shipX = motion.x + shakeOffset()
+    shipY = motion.y + arrivalOffset()
+    if !gone { (shroudX, shroudY) = (shipX, shipY) }
+
+    // The fire's direction and embers follow the ship's flight alone, not the
+    // shake or the overshoot, and stand still with it once it is gone.
+    shroud?.tick(flying: motion.flying, velocityY: gone ? 0 : motion.y - lastY)
     trail.tick(
-      shipX: motion.x, shipY: motion.y, exhaustY: motion.y + shipSprite.height, flying: motion.flying)
+      shipX: shipX, shipY: shipY, exhaustY: shipY + shipSprite.height, flying: motion.flying, emitting: !gone)
+    if gone { lingering = goneTicks < Self.lingerTicks && (!trail.isEmpty || shroudOnScreen) }
+  }
+
+  /// 1 px right then left on alternate ticks over the start of the fly-in.
+  private func shakeOffset() -> Int {
+    guard motion.phase == .flyIn, ticks <= Self.shakeTicks else { return 0 }
+    return ticks % 2 == 1 ? 1 : -1
+  }
+
+  /// Up past the hover point and back: eases out to `-overshoot`, then eases
+  /// back to 0. Runs to its end whatever the phase, so it never jumps.
+  private func arrivalOffset() -> Int {
+    guard let t = landedTicks else { return 0 }
+    let rise = Self.overshootTicks, settle = Self.settleTicks
+    let f: Double
+    if t <= rise {
+      f = sin(Double.pi / 2 * Double(t) / Double(rise))
+    } else if t < rise + settle {
+      f = (1 + cos(Double.pi * Double(t - rise) / Double(settle))) / 2
+    } else {
+      return 0
+    }
+    return -Self.round(Double(Self.overshoot) * f)
+  }
+
+  /// The comet fire has something to draw inside the buffer.
+  private var shroudOnScreen: Bool {
+    guard let rows = shroud?.rows(top: shroudY - 12, bottom: shroudY + shipSprite.height - 1) else { return false }
+    return rows.upperBound >= 0 && rows.lowerBound < bufferHeight
   }
 
   /// Starts the fly-off.
@@ -81,21 +145,19 @@ public struct Scene {
 
   /// Draws the frame over `b`'s current contents; callers clear `b` first.
   public func render(into b: inout PixelBuffer) {
-    let x = motion.x, y = motion.y
+    guard lingering else { return }
+    let x = shipX, y = shipY
     let creatureSprite = creatureFrame()
     let silhouette = [(creatureSprite, dx: -8, dy: -11), (shipSprite, dx: -12, dy: 0)]
-
-    if motion.phase == .gone {
-      if goneTicks < Self.lingerTicks { trail.draw(into: &b, ramp: ramp, silhouette: silhouette) }
-      return
-    }
 
     trail.draw(into: &b, ramp: ramp, silhouette: silhouette)
     if let shroud {
       shroud.draw(
-        into: &b, ramp: ramp, centerX: x, top: y - 12, bottom: y + shipSprite.height - 1,
+        into: &b, ramp: ramp, centerX: shroudX, top: shroudY - 12, bottom: shroudY + shipSprite.height - 1,
         halfWidth: Self.cometHalfWidth)
     }
+    if motion.phase == .gone { return }
+
     // While the fire is strong it takes the aura's place.
     if (shroud?.strength ?? 0) <= 0.5 { drawAura(into: &b, x: x, y: y) }
 

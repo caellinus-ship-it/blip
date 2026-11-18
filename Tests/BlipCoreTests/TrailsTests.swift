@@ -50,4 +50,16 @@ import Testing
     }
     #expect(frame() == frame())
   }
+  @Test func tickingWithoutEmittingOnlyAgesWhatIsThere() {
+    for style in TrailStyle.allCases {
+      var never = TrailSystem(style: style, seed: 1)
+      for _ in 0..<30 { never.tick(shipX: 100, shipY: 100, exhaustY: 109, flying: true, emitting: false) }
+      #expect(lit(never) == 0, "\(style) drew without emitting"); #expect(never.isEmpty, "\(style)")
+      var t = TrailSystem(style: style, seed: 1)
+      for i in 0..<40 { t.tick(shipX: 100, shipY: 180 - 3 * i, exhaustY: 189 - 3 * i, flying: true) }
+      #expect(lit(t) > 0); #expect(!t.isEmpty)
+      for _ in 0..<70 { t.tick(shipX: 100, shipY: -45, exhaustY: -36, flying: false, emitting: false) }
+      #expect(lit(t) == 0, "\(style) still drawing"); #expect(t.isEmpty, "\(style)")
+    }
+  }
 }

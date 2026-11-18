@@ -54,4 +54,50 @@ import Testing
     fa.clear(); fb.clear(); a.render(into: &fa); b.render(into: &fb)
     #expect(fa.pixels == fb.pixels)
   }
+  @Test func arrivalOvershootsThenSettles() {
+    var set = BlipSettings(); set.hover = .still
+    var s = Scene(settings: set, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    var minY = Int.max
+    for _ in 0..<110 { s.tick(); minY = min(minY, s.hitRect.y + 12) }
+    #expect(minY == 98); #expect(s.hitRect.y + 12 == 100)
+  }
+  @Test func launchShakesForTenTicks() {
+    var set = BlipSettings(); set.hover = .still
+    var s = Scene(settings: set, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    var xs: [Int] = []
+    for _ in 0..<20 { s.tick(); xs.append(s.hitRect.x + 12) }
+    #expect(xs == [121, 119, 121, 119, 121, 119, 121, 119, 121, 119] + Array(repeating: 120, count: 10))
+  }
+  @Test func cometTailFinishesLeavingAfterTheShipIsGone() {
+    var on = BlipSettings(); on.hover = .still; on.trail = .rings
+    var off = on; off.comet = false
+    var a = Scene(settings: on, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    var b = Scene(settings: off, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    for _ in 0..<120 { a.tick(); b.tick() }
+    a.dismiss(); b.dismiss()
+    while a.phase != .gone { a.tick(); b.tick() }
+    #expect(frame(a).pixels.filter { $0 != 0 }.count > frame(b).pixels.filter { $0 != 0 }.count + 20)
+    for _ in 0..<60 { a.tick(); b.tick() }
+    #expect(frame(a).pixels.allSatisfy { $0 == 0 }); #expect(frame(b).pixels.allSatisfy { $0 == 0 })
+  }
+  @Test func lingerEndsWhenNothingIsLeftToDraw() {
+    for trail in TrailStyle.allCases { for comet in [false, true] {
+      var set = BlipSettings(); set.hover = .still; set.trail = trail; set.comet = comet
+      var s = Scene(settings: set, bufferWidth: 240, bufferHeight: 200, seed: 1)
+      for _ in 0..<120 { s.tick() }; s.dismiss()
+      while s.phase != .gone { s.tick() }
+      // Flame and lightning hang off the ship and go with it; everything else is still in view.
+      if comet || ![.flame, .lightning].contains(trail) { #expect(!s.isFinished, "\(trail) comet \(comet)") }
+      var n = 0
+      while !s.isFinished && n < 100 { s.tick(); n += 1 }
+      #expect(n <= 60, "\(trail) comet \(comet)"); #expect(frame(s).pixels.allSatisfy { $0 == 0 })
+    } }
+    var set = BlipSettings(); set.hover = .still; set.trail = .echoes; set.comet = false
+    var s = Scene(settings: set, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    for _ in 0..<120 { s.tick() }; s.dismiss()
+    while s.phase != .gone { s.tick() }
+    var n = 0
+    while !s.isFinished { s.tick(); n += 1 }
+    #expect(n < 40)   // echoes last 24 ticks; the linger does not run its full 60
+  }
 }

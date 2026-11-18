@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem?
   private var store: SettingsStore?
   private var settingsWindow: SettingsWindowController?
+  private var onboarding: OnboardingWindowController?
   private var summon: SummonController?
   private var pool: BrainPool?
   /// The chat of the summon in progress, if any.
@@ -84,6 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             keyEquivalent: "q"))
     item.menu = menu
     statusItem = item
+
+    let onboarding = OnboardingWindowController(store: store)
+    self.onboarding = onboarding
+    onboarding.showIfFirstLaunch()
   }
 
   func applicationWillTerminate(_ notification: Notification) {

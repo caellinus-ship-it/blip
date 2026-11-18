@@ -11,7 +11,8 @@ public struct CometShroud {
   /// A spark left behind the tail. It stays where it was spawned, so it falls
   /// behind the moving ship.
   private struct Ember {
-    /// Where across the tail it spawned, from -0.5 (left edge) to 0.5 (right edge).
+    /// Where across the tail it spawned, as a fraction of the full-strength
+    /// tail width: within ±0.5 of the width the tail had then.
     let spread: Double
     /// Sideways drift in pixels per tick.
     let drift: Double
@@ -57,13 +58,30 @@ public struct CometShroud {
       embers[i].behind += embers[i].below ? -velocityY : velocityY
     }
     if strength > 0.3 && tickCount % 2 == 0 {
-      embers.append(Ember(spread: random.next() - 0.5, drift: (random.next() * 2 - 1) * 0.3, below: streamDown))
+      let spread = (random.next() - 0.5) * Self.tailWidthFactor(strength)
+      embers.append(Ember(spread: spread, drift: (random.next() * 2 - 1) * 0.3, below: streamDown))
     }
     if tickCount % 3 == 0 { rollWobble() }
   }
 
+  /// The rows the fire reaches around a body whose first and last rows are
+  /// `top` and `bottom`, embers included; `nil` when it draws nothing.
+  public func rows(top: Int, bottom: Int) -> ClosedRange<Int>? {
+    guard strength > 0 else { return nil }
+    // Laid out for a tail below the body, as in `draw`.
+    var first = top + 4 - Self.capHeight(strength), last = bottom + Self.tailLength(strength)
+    if !streamDown { (first, last) = (top + bottom - last, top + bottom - first) }
+    for e in embers {
+      let y = e.below ? bottom + 1 + e.behind : top - 1 - e.behind
+      first = min(first, y); last = max(last, y)
+    }
+    return first...last
+  }
+
   /// Draws the fire around a body whose first and last rows are `top` and
-  /// `bottom`, centred on `centerX`, `halfWidth` pixels to each side.
+  /// `bottom` and whose columns are `centerX - halfWidth` through
+  /// `centerX + halfWidth - 1`, centred half a pixel left of `centerX` as the
+  /// sprites are.
   public func draw(into b: inout PixelBuffer, ramp: ColorRamp, centerX: Int, top: Int, bottom: Int, halfWidth: Int) {
     guard strength > 0 else { return }
     let s = strength
@@ -87,46 +105,56 @@ public struct CometShroud {
 
     // The fire around the body pulls back from the front as it weakens, so it
     // dies away toward the tail instead of shrinking as a box.
-    let rx = halfWidth + 3, ry = Self.round(7 * s) + 2
+    let rx = halfWidth + 3, ry = Self.capHeight(s)
     let reach = min(1, max(0, (s - 0.15) / 0.6))
     let firstRow = bottom + 1 - Self.round(Double(bottom + 1 - (cy - ry)) * reach)
     func head(_ x: Int, _ y: Int, _ w: Int, _ color: RGBA) {
       if y >= firstRow { row(x, y, w, color) }
+    }
+    // The body's left half is laid out from `cx`; its right half is the mirror
+    // image about `cx - 0.5`, where the sprites are centred. `span` draws the
+    // run `dx...dx + w - 1` (in offsets from `cx`, left of centre) and its mirror.
+    func span(_ dx: Int, _ y: Int, _ w: Int, _ color: RGBA) {
+      head(cx + dx, y, w, color)
+      head(cx - dx - w, y, w, color)
+    }
+    // A point `dx` from the centre of a symmetric figure: the centre column
+    // becomes the two columns either side of `cx - 0.5`.
+    func point(_ dx: Int, _ y: Int, _ color: RGBA) {
+      head(dx > 0 ? cx + dx - 1 : cx + dx, y, 1, color)
+      if dx == 0 { head(cx - 1, y, 1, color) }
     }
 
     // Cap: a half ellipse over the leading side, two rings thick, its outer
     // ring flickering, filled with glow behind the creature.
     let flicker = (tickCount / 2) % 2
     Self.halfEllipse(rx: rx, ry: ry) { i, dx, dy in
-      if (i + flicker) % 2 == 0 { head(cx + dx, cy + dy, 1, ramp.main) }
+      if (i + flicker) % 2 == 0 { point(dx, cy + dy, ramp.main) }
     }
-    Self.halfEllipse(rx: rx - 1, ry: ry - 1) { _, dx, dy in head(cx + dx, cy + dy, 1, ramp.light) }
+    Self.halfEllipse(rx: rx - 1, ry: ry - 1) { _, dx, dy in point(dx, cy + dy, ramp.light) }
     for dy in stride(from: ry - 2, through: 1, by: -1) {
       let half = Self.round(Double(rx - 2) * (1 - pow(Double(dy) / Double(ry - 1), 2)).squareRoot())
-      head(cx - half, cy - dy, 2 * half + 1, ramp.light)
+      if half > 0 { span(-half, cy - dy, half, ramp.light) }
     }
-    head(cx - 1, cy - ry + 1, 3, ramp.white)
+    span(-1, cy - ry + 1, 1, ramp.white)
 
     // Sheaths: from the cap's ends down both sides of the body, glow between
     // them and the creature.
-    let clear = halfWidth - 3  // the glow stops this far from the centre, short of the creature
+    let clear = halfWidth - 4  // the glow stops this far from the centre, at the creature's sides
     let sheathRows = max(1, bottom - cy)
     for i in 0..<sheathRows {
       let y = cy + 1 + i
       let color = ramp.step(0.25 + 0.5 * Double(i) / Double(sheathRows))
       let left = 2 + wobble[i % Self.wobbleRows], right = 2 + wobble[Self.wobbleRows + i % Self.wobbleRows]
       head(cx - rx + 2 - left, y, left, color)
-      head(cx + rx - 1, y, right, color)
+      head(cx + rx - 2, y, right, color)
     }
-    for y in cy...bottom {
-      head(cx - rx + 2, y, rx - 1 - clear, ramp.light)
-      head(cx + clear, y, rx - 1 - clear, ramp.light)
-    }
+    for y in cy...bottom { span(-rx + 2, y, rx - 2 - clear, ramp.light) }
 
     // Tail: nested flames tapering away below the body, ragged at the edges,
     // swaying, its far end dithered.
-    let length = Self.round(56 * s)
-    let tailWidth = baseWidth * min(1, 0.3 + s)  // a weak tail narrows as well as shortens
+    let length = Self.tailLength(s)
+    let tailWidth = baseWidth * Self.tailWidthFactor(s)
     for j in 0..<length {
       let f = Double(j) / Double(length)
       if f >= 0.75 && (j + tickCount) % 2 == 1 { continue }
@@ -140,6 +168,16 @@ public struct CometShroud {
       if f < 0.3 && width > 12 { row(left + 6, y, width - 12, ramp.white) }
     }
   }
+
+  /// How far the cap rises above the body's fourth row.
+  private static func capHeight(_ strength: Double) -> Int { round(7 * strength) + 2 }
+
+  /// The tail's length in rows.
+  private static func tailLength(_ strength: Double) -> Int { round(56 * strength) }
+
+  /// The tail's width as a fraction of its full-strength width: a weak tail
+  /// narrows as well as shortens.
+  private static func tailWidthFactor(_ strength: Double) -> Double { min(1, 0.3 + strength) }
 
   private mutating func rollWobble() {
     wobble = (0..<2 * Self.wobbleRows).map { _ in Int(random.next() * 3) - 1 }
