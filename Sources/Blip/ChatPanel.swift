@@ -55,7 +55,8 @@ final class ChatPanel: NSPanel {
     return super.performKeyEquivalent(with: event)
   }
 
-  private static func editAction(key: String, shift: Bool) -> Selector? {
+  /// The editing action for a Command shortcut, also used by the settings window.
+  static func editAction(key: String, shift: Bool) -> Selector? {
     switch (key, shift) {
     case ("x", false): return #selector(NSText.cut(_:))
     case ("c", false): return #selector(NSText.copy(_:))

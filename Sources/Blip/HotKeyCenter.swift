@@ -38,10 +38,15 @@ final class HotKeyCenter {
     if let handlerRef { RemoveEventHandler(handlerRef) }
   }
 
-  /// Replaces the shortcut.
+  /// Replaces the shortcut, or turns it back on after `suspend`.
   func update(_ hotKey: HotKey) {
     unregister()
     register(hotKey)
+  }
+
+  /// Turns the shortcut off until the next `update`, so it can be pressed to record it.
+  func suspend() {
+    unregister()
   }
 
   private func register(_ hotKey: HotKey) {

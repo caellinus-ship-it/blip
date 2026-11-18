@@ -9,10 +9,6 @@ import BlipCore
 /// the buffer is rounded up, so its last column and row may hang off the
 /// right and bottom edges.
 final class CanvasWindow: NSPanel {
-  private static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-  private static let bitmapInfo = CGBitmapInfo(
-    rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)
-
   let pointsPerPixel: Int
   /// Scratch buffer sized to cover the screen.
   var buffer: PixelBuffer
@@ -70,15 +66,9 @@ final class CanvasWindow: NSPanel {
 
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
-  /// Shows `b` (premultiplied RGBA, 8 bits per channel).
+  /// Shows `b`.
   func present(_ b: PixelBuffer) {
-    let data = b.pixels.withUnsafeBytes { Data($0) } as CFData
-    guard let provider = CGDataProvider(data: data),
-      let image = CGImage(
-        width: b.width, height: b.height, bitsPerComponent: 8, bitsPerPixel: 32,
-        bytesPerRow: b.width * 4, space: Self.colorSpace, bitmapInfo: Self.bitmapInfo,
-        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
-    else { return }
+    guard let image = b.makeImage() else { return }
     pixelLayer.contents = image
   }
 
@@ -148,4 +138,21 @@ final class CanvasWindow: NSPanel {
 /// first activating Blip.
 private final class CanvasView: NSView {
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+extension PixelBuffer {
+  private static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+  private static let bitmapInfo = CGBitmapInfo(
+    rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)
+
+  /// The buffer as an sRGB image, one image pixel per arcade pixel (premultiplied RGBA, 8 bits per
+  /// channel). Show it in a layer with `.nearest` magnification so the pixels stay crisp.
+  func makeImage() -> CGImage? {
+    let data = pixels.withUnsafeBytes { Data($0) } as CFData
+    guard let provider = CGDataProvider(data: data) else { return nil }
+    return CGImage(
+      width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+      bytesPerRow: width * 4, space: Self.colorSpace, bitmapInfo: Self.bitmapInfo,
+      provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+  }
 }

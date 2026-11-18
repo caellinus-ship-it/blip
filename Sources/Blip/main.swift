@@ -56,7 +56,8 @@ app.run()
       print("\(String(ms).leftPadded(to: 6)) ms  \(text)")
     }
 
-    let pool = BrainPool(settings: { BlipSettings() })
+    let store = SettingsStore()
+    let pool = BrainPool(settings: { store.settings })
     guard let session = pool.take() else { fail("no claude executable found") }
 
     // Exit only once the child is gone; `stop` escalates to SIGKILL within two seconds.

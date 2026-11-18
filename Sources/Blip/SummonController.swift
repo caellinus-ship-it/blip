@@ -28,9 +28,9 @@ final class SummonController: NSObject {
   private static let maxTicksPerFrame = 4
   /// Blank ticks after `.gone` before the overlay closes.
   private static let blankTicksBeforeClose = 60
-  /// Ticks a scene rebuilt on another screen is run ahead: past the 90-tick
+  /// Ticks a scene rebuilt on another screen (or for the settings preview) is run ahead: past the 90-tick
   /// fly-in, then long enough for the fly-in trail to die out.
-  private static let settleTicks = 150
+  static let settleTicks = 150
 
   private let settings: () -> BlipSettings
   private var screen: NSScreen?
