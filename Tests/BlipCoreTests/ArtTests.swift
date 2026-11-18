@@ -14,6 +14,27 @@ import Testing
   @Test func onlyGhostAndAlienWiggle() {
     #expect(Creature.allCases.filter { Art.creature($0).wiggles } == [.ghost, .alien])
   }
+  @Test func eyesAndMouthMatchTheSprites() {
+    for c in Creature.allCases {
+      let art = Art.creature(c), rows = art.sprite.rows.map { Array($0) }
+      switch art.eyes {
+      case .pair(let l, let r):
+        for e in [l, r] {
+          #expect(String([rows[e.y][e.x], rows[e.y][e.x + 1]]) == "ow", "\(c)")
+          #expect(String([rows[e.y + 1][e.x], rows[e.y + 1][e.x + 1]]) == "oo", "\(c)")
+        }
+      case .framed(let cell, let w, let h):
+        for y in cell.y..<(cell.y + h) { for x in cell.x..<(cell.x + w) { #expect("ow".contains(rows[y][x]), "\(c)") } }
+      }
+      #expect(art.mouth.x + 1 < 16 && art.mouth.y < 11, "\(c) mouth starts above the ship")
+    }
+  }
+  @Test func everySpriteKeyHasAColor() {
+    let creatureKeys = Set(Art.creaturePalette(Art.creature(.blob)).keys), shipKeys = Set(Art.shipPalette(trim: 1).keys)
+    for c in Creature.allCases { for k in Art.creature(c).sprite.rows.joined() where k != "." { #expect(creatureKeys.contains(k), "\(c) \(k)") } }
+    for s in Ship.allCases { for k in Art.ship(s).rows.joined() where k != "." { #expect(shipKeys.contains(k), "\(s) \(k)") } }
+    #expect(Art.creaturePalette(Art.creature(.cat), blink: true)["W"] == Art.white)  // whiskers stay through a blink
+  }
   @Test func rampSteps() {
     let r = ColorRamp(.cyan)
     #expect(r.white == 0xFFFFFFFF); #expect(r.main == 0x22D3EEFF)

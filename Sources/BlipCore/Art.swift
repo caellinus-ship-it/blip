@@ -12,25 +12,83 @@ public struct Sprite: Sendable {
 }
 
 public enum Creature: String, Codable, CaseIterable {
-  case blob, ghost, cat, alien
+  case blob, ghost, cat, alien, santa, snowman, reindeer
 }
 
 public enum Ship: String, Codable, CaseIterable {
-  case rocket, saucer, pod, star
+  case rocket, saucer, pod, star, sleigh
 }
 
-/// A creature's sprite and its three body colors. `wiggles` creatures shift
-/// their bottom row on alternate ticks.
+/// Where a creature's eyes are in its sprite, so the scene can move and reshape them without
+/// reading sprite characters.
+public enum Eyes: Sendable, Equatable {
+  /// Two 2x2 eyes (`ow` over `oo`); the cells are each eye's top-left.
+  case pair(left: Cell, right: Cell)
+  /// One eye inside a dark frame: the white interior's top-left cell and its size.
+  case framed(Cell, width: Int, height: Int)
+}
+
+/// A cell in a sprite: column and row from its top-left.
+public struct Cell: Sendable, Equatable {
+  public let x, y: Int
+
+  public init(_ x: Int, _ y: Int) {
+    self.x = x
+    self.y = y
+  }
+}
+
+/// A creature's sprite, its three body colors and where its face is. `wiggles` creatures shift
+/// their bottom row on alternate ticks. `auraInner` and `auraOuter` color the aura when the owner
+/// hasn't picked one; `mouth` is the top-left of the 2x2 a yawn opens.
 public struct CreatureArt: Sendable {
   public let sprite: Sprite
   public let body, shade, highlight: RGBA
   public let wiggles: Bool
+  public let eyes: Eyes
+  public let mouth: Cell
+  public let auraInner, auraOuter: RGBA
+
+  public init(
+    sprite: Sprite, body: RGBA, shade: RGBA, highlight: RGBA, wiggles: Bool, eyes: Eyes = Art.twoEyes,
+    mouth: Cell, aura: (inner: RGBA, outer: RGBA)? = nil
+  ) {
+    self.sprite = sprite
+    (self.body, self.shade, self.highlight, self.wiggles) = (body, shade, highlight, wiggles)
+    (self.eyes, self.mouth) = (eyes, mouth)
+    (auraInner, auraOuter) = aura ?? (highlight, body)
+  }
 }
 
 /// All sprite art, copied from `docs/reference/mockup.html` (`CR`, `SH`, `CF`).
 public enum Art {
   /// The dark outline color, key `k` in every sprite.
   public static let outline: RGBA = 0x15151FFF
+  public static let white: RGBA = 0xFFFFFFFF
+  public static let yellow: RGBA = 0xFDE047FF
+  /// The eyes most creatures have: 2x2 at columns 4 and 10 of row 5.
+  public static let twoEyes = Eyes.pair(left: Cell(4, 5), right: Cell(10, 5))
+
+  /// The colors a creature sprite is drawn in. With `blink`, the eyes (`o` and `w`) take the
+  /// shade and body colors; every other key, `W` white included, stays as it is.
+  public static func creaturePalette(_ art: CreatureArt, blink: Bool = false) -> [Character: RGBA] {
+    [
+      "k": outline, "X": art.body, "s": art.shade, "h": art.highlight,
+      "o": blink ? art.shade : outline, "w": blink ? art.body : white,
+      "b": 0xFB7185FF, "m": outline, "p": 0xF472B6FF, "a": yellow,
+      "r": 0xDC2626FF, "d": 0x991B1BFF, "W": white, "G": 0xD5DCE8FF, "n": 0xFB923CFF,
+      "t": 0xE7C08AFF, "l": 0xF3D9B8FF, "T": 0x3A3F52FF,
+    ]
+  }
+
+  /// The colors a ship sprite is drawn in: `trim` for the `R` band, `lights` for the saucer's `y` lights.
+  public static func shipPalette(trim: RGBA, lights: RGBA = yellow) -> [Character: RGBA] {
+    [
+      "k": outline, "H": 0xE8EAF0FF, "L": white, "D": 0x9AA1B2FF, "R": trim,
+      "T": 0x3A3F52FF, "o": 0x5B6378FF, "y": lights,
+      "r": 0xDC2626FF, "d": 0x991B1BFF, "g": 0xFBBF24FF,
+    ]
+  }
 
   public static func creature(_ c: Creature) -> CreatureArt {
     switch c {
@@ -51,7 +109,7 @@ public enum Art {
           ".kssXXXXXXXsssk.",
           "..kkkkkkkkkkkk..",
         ]),
-        body: 0x6EE7B7FF, shade: 0x34B88AFF, highlight: 0xD1FAE5FF, wiggles: false)
+        body: 0x6EE7B7FF, shade: 0x34B88AFF, highlight: 0xD1FAE5FF, wiggles: false, mouth: Cell(7, 7))
     case .ghost:
       return CreatureArt(
         sprite: Sprite(rows: [
@@ -69,7 +127,7 @@ public enum Art {
           "kXXkkXXXkkXXXkXk",
           ".kk..kkk..kkk.k.",
         ]),
-        body: 0xC4B5FDFF, shade: 0x8B7BD8FF, highlight: 0xF5F3FFFF, wiggles: true)
+        body: 0xC4B5FDFF, shade: 0x8B7BD8FF, highlight: 0xF5F3FFFF, wiggles: true, mouth: Cell(7, 7))
     case .cat:
       return CreatureArt(
         sprite: Sprite(rows: [
@@ -81,13 +139,13 @@ public enum Art {
           "kXXXowXXXXowXXXk",
           "kXXXooXXXXooXXXk",
           "kXXXXXXppXXXXXXk",
-          "kwwXXXmXXmXXXwwk",
+          "kWWXXXmXXmXXXWWk",
           "kXXXXXXXXXXXXXsk",
           ".kXXXXXXXXXXXsk.",
           ".kssXXXXXXXsssk.",
           "..kkkkkkkkkkkk..",
         ]),
-        body: 0xFDBA74FF, shade: 0xD98B3FFF, highlight: 0xFFEDD5FF, wiggles: false)
+        body: 0xFDBA74FF, shade: 0xD98B3FFF, highlight: 0xFFEDD5FF, wiggles: false, mouth: Cell(7, 8))
     case .alien:
       return CreatureArt(
         sprite: Sprite(rows: [
@@ -105,7 +163,65 @@ public enum Art {
           "..kXkkXkkXkkXk..",
           "..kk..kk..kk.k..",
         ]),
-        body: 0x7DD3FCFF, shade: 0x3BA4D4FF, highlight: 0xE0F2FEFF, wiggles: true)
+        body: 0x7DD3FCFF, shade: 0x3BA4D4FF, highlight: 0xE0F2FEFF, wiggles: true,
+        eyes: .framed(Cell(6, 6), width: 4, height: 2), mouth: Cell(7, 9))
+    case .santa:
+      return CreatureArt(
+        sprite: Sprite(rows: [
+          "......kkkk..kk..",
+          "....kkrrrrkkWWk.",
+          "...krrrrrrrrkWWk",
+          "..krrrrrrrrrrkk.",
+          ".kkWWWWWWWWWWkk.",
+          "kWWWWWWWWWWWWWWk",
+          "kkXXowXXXXowXXkk",
+          ".kXXooXppXooXXk.",
+          ".kbXWWWXXWWWXbk.",
+          "kWWWWWWmmWWWWWWk",
+          "kWWWWWWWWWWWWGGk",
+          ".kGGWWWWWWWGGGk.",
+          "..kkkkkkkkkkkk..",
+        ]),
+        body: 0xFFD9B8FF, shade: 0xE0A982FF, highlight: 0xFFEBD9FF, wiggles: false,
+        eyes: .pair(left: Cell(4, 6), right: Cell(10, 6)), mouth: Cell(7, 9), aura: (Art.white, 0xEF4444FF))
+    case .snowman:
+      return CreatureArt(
+        sprite: Sprite(rows: [
+          "....kkkkkkkk....",
+          "....kTTTTTTk....",
+          "....krrrrrrk....",
+          "..kTTTTTTTTTTk..",
+          ".kXXhhXXXXXXXXk.",
+          "kXXXowXXXXowXXXk",
+          "kXXXooXXXXooXXXk",
+          "kXbXXXXnnnXXXbXk",
+          "kXXXXmXXXXmXXXXk",
+          ".kXXXXmmmmXXXXk.",
+          ".krrdrrdrrdrrdk.",
+          "kXXXXXXXXXXXXXsk",
+          ".kkkkkkkkkkkkkk.",
+        ]),
+        body: 0xF1F5F9FF, shade: 0xCBD5E1FF, highlight: 0xFFFFFFFF, wiggles: false,
+        mouth: Cell(7, 8), aura: (Art.white, 0x7DD3FCFF))
+    case .reindeer:
+      return CreatureArt(
+        sprite: Sprite(rows: [
+          ".kk.k......k.kk.",
+          "kttktk....ktkttk",
+          ".kttk......kttk.",
+          "..ktkkkkkkkktk..",
+          "kssXXhXXXXXXXssk",
+          ".kXXowXXXXowXXk.",
+          ".kXXooXXXXooXXk.",
+          ".kXXXXllllXXXXk.",
+          ".kXbXlrWrrlXbXk.",
+          "..kXXlrrrrlXXk..",
+          "..kXXXllllXXXk..",
+          "..kXXXXXXXXXXk..",
+          "...kkkkkkkkkk...",
+        ]),
+        body: 0xC68B59FF, shade: 0x8F5A2EFF, highlight: 0xE2B48AFF, wiggles: false,
+        mouth: Cell(7, 10), aura: (0xFDE047FF, 0xEF4444FF))
     }
   }
 
@@ -153,6 +269,18 @@ public enum Art {
         "kkk...kkDDDDDDDDkk...kkk",
         "........kTTk.kTTk.......",
       ])
+    case .sleigh:
+      return Sprite(rows: [
+        ".kk..................kk.",
+        "kggkkkkkkkkkkkkkkkkkkggk",
+        "kgkrLLrrrrrrrrrrrrrrdkgk",
+        ".kkrLrrrrrrrrrrrrrrrdkk.",
+        "..kRRRRRRRRRRRRRRRRRRk..",
+        "kk.kkkkkkkkkkkkkkkkkk.kk",
+        "kgk..kgk........kgk..kgk",
+        ".kggggggggggggggggggggk.",
+        "..kkkkkkkkkkkkkkkkkkkk..",
+      ])
     }
   }
 
@@ -161,6 +289,13 @@ public enum Art {
     Sprite(rows: [".X.X.", "XXXXX", "XXXXX", ".XXX.", "..X.."]),
     Sprite(rows: ["..X..", "XXXXX", ".XXX.", ".X.X.", "X...X"]),
     Sprite(rows: ["..X..", ".XXX.", "XXXXX", ".XXX.", "..X.."]),
+  ]
+
+  /// The snow trail's three flakes, largest first; each is drawn in a single color.
+  public static let snowflakes: [Sprite] = [
+    Sprite(rows: ["..X..", "X.X.X", ".XXX.", "X.X.X", "..X.."]),
+    Sprite(rows: [".X.", "XXX", ".X."]),
+    Sprite(rows: ["XX", "XX"]),
   ]
 }
 

@@ -104,6 +104,12 @@ public struct BlipSettings: Codable, Equatable {
   public var launchAtLogin = true
   /// The `claude` executable to run; `nil` means find it automatically.
   public var claudePath: String? = nil
+  /// The creature's eyes follow the pointer.
+  public var followPointer = true
+  /// The creature shows moods: reading, happy, startled, sleepy.
+  public var moods = true
+  /// A scan beam sweeps what the assistant is looking at.
+  public var scanBeam = true
 
   public init() {}
 
@@ -138,6 +144,9 @@ public struct BlipSettings: Codable, Equatable {
     hotKey = try c.decodeIfPresent(HotKey.self, forKey: .hotKey) ?? d.hotKey
     launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
     claudePath = try c.decodeIfPresent(String.self, forKey: .claudePath) ?? d.claudePath
+    followPointer = try c.decodeIfPresent(Bool.self, forKey: .followPointer) ?? d.followPointer
+    moods = try c.decodeIfPresent(Bool.self, forKey: .moods) ?? d.moods
+    scanBeam = try c.decodeIfPresent(Bool.self, forKey: .scanBeam) ?? d.scanBeam
   }
 }
 

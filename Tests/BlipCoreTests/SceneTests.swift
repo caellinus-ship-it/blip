@@ -109,7 +109,11 @@ import Testing
       let (ax, ay) = s.anchor
       #expect(s.hitRect.x >= ax - r.left && s.hitRect.x + s.hitRect.w - 1 <= ax + r.right)
       #expect(s.hitRect.y >= ay - r.up && s.hitRect.y + s.hitRect.h - 1 <= ay + r.down)
-      for _ in 0..<40 {
+      for t in 0..<160 {
+        // Calm, then happy, then startled, each looking at a far corner.
+        if t == 40 { s.react(.happy) }
+        if t == 110 { s.react(.startled) }
+        s.look(at: t % 2 == 0 ? (0, 0) : (239, 199))
         s.tick()
         let b = frame(s)
         // Rows above the exhaust hold only the aura, the creature, the dome and the ship.
@@ -128,5 +132,75 @@ import Testing
     for _ in 0..<200 {
       s.tick(); #expect(s.hitRect.x + s.hitRect.w <= 240 && s.hitRect.y + s.hitRect.h <= 200)
     }
+  }
+  func hovering(_ set: BlipSettings = { var s = BlipSettings(); s.hover = .still; s.trail = .rings; return s }()) -> Scene {
+    var s = Scene(settings: set, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    for _ in 0..<300 { s.tick() }
+    return s
+  }
+  @Test func eyesFollowThePointerOnlyWhenAllowed() {
+    for c in Creature.allCases {
+      var set = BlipSettings(); set.creature = c; set.hover = .still; set.trail = .rings
+      let still = hovering(set)
+      var frames: [[RGBA]] = []
+      for p in [(0, 95), (239, 95), (120, 0), (120, 199)] {
+        var s = still; s.look(at: p); s.tick(); frames.append(frame(s).pixels)
+      }
+      #expect(Set(frames).count == 4, "\(c)")
+      var near = still; near.look(at: (120, 96)); near.tick()
+      var none = still; none.tick()
+      #expect(frame(near).pixels == frame(none).pixels, "\(c) looks ahead when the pointer is on its face")
+      set.followPointer = false
+      var a = hovering(set), b = a
+      a.look(at: (0, 0)); a.tick(); b.tick()
+      #expect(frame(a).pixels == frame(b).pixels, "\(c)")
+    }
+  }
+  @Test func moodsShowOnlyWhileHoveringAndWithMoodsOn() {
+    let calm = hovering()
+    for change in [{ (s: inout Scene) in s.react(.happy) }, { $0.react(.startled) }, { $0.reading = true }] {
+      var s = calm, c = calm
+      change(&s)
+      for _ in 0..<12 { s.tick(); c.tick() }
+      #expect(frame(s).pixels != frame(c).pixels)
+    }
+    var set = BlipSettings(); set.hover = .still; set.trail = .rings; set.moods = false
+    var off = hovering(set), c = off
+    off.react(.happy); off.react(.startled); off.reading = true
+    for _ in 0..<12 { off.tick(); c.tick() }
+    #expect(frame(off).pixels == frame(c).pixels)
+    var flying = Scene(settings: BlipSettings(), bufferWidth: 240, bufferHeight: 200, seed: 1), plain = flying
+    for _ in 0..<20 { flying.tick(); plain.tick() }
+    flying.react(.happy); for _ in 0..<10 { flying.tick(); plain.tick() }
+    #expect(frame(flying).pixels == frame(plain).pixels)
+  }
+  @Test func idleCreatureYawnsThenSleepsAndStirringWakesIt() {
+    var s = hovering(), awake = s
+    #expect(s.mood == .calm)
+    for _ in 0..<1300 { s.tick() }
+    #expect(s.mood == .yawning)
+    for _ in 0..<1200 { s.tick() }
+    #expect(s.mood == .asleep)
+    s.look(at: (10, 10)); s.look(at: (11, 11)); #expect(s.mood == .asleep)  // a 1 px nudge is not activity
+    s.look(at: (14, 10)); #expect(s.mood == .calm)
+    for _ in 0..<2500 { s.tick(); awake.tick(); awake.thinking = true }
+    #expect(awake.mood == .calm)
+  }
+  @Test func scanSweepsThenLeavesNoTrace() {
+    var a = hovering(), b = a
+    a.scan((-50, 20, 400, 100))
+    var seen = Set<[RGBA]>()
+    for _ in 0..<Scene.scanTicks { a.tick(); b.tick(); seen.insert(frame(a).pixels); #expect(a.hitRect == b.hitRect) }
+    #expect(seen.count > 30)
+    a.tick(); b.tick()
+    #expect(frame(a).pixels == frame(b).pixels)
+    var stopped = hovering(); stopped.scan(nil); for _ in 0..<10 { stopped.tick() }
+    stopped.dismiss(); stopped.tick()
+    var plain = hovering(); for _ in 0..<10 { plain.tick() }; plain.dismiss(); plain.tick()
+    #expect(frame(stopped).pixels == frame(plain).pixels)
+    var set = BlipSettings(); set.hover = .still; set.trail = .rings; set.scanBeam = false
+    var off = hovering(set), c = off
+    off.scan(nil); for _ in 0..<20 { off.tick(); c.tick() }
+    #expect(frame(off).pixels == frame(c).pixels)
   }
 }

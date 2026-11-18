@@ -12,7 +12,7 @@ public struct Note: Equatable, Sendable {
   }
 }
 
-/// Blip's three sound effects and the square-wave synth that renders them.
+/// Blip's sound effects (launch, reply, fly-off, scan and oops) and the square-wave synth that renders them.
 public enum Chiptune {
   /// A summon: a rising sweep, eight notes from 220 Hz to 880 Hz in equal ratio steps.
   public static let launch = sweep(from: 220, to: 880, notes: 8, duration: 0.04)
@@ -20,6 +20,13 @@ public enum Chiptune {
   public static let reply = [Note(frequency: 880, duration: 0.05), Note(frequency: 1320, duration: 0.05)]
   /// The ship leaving: eight notes falling from 880 Hz to 220 Hz.
   public static let flyOff = sweep(from: 880, to: 220, notes: 8, duration: 0.03)
+  /// Taking a picture of the screen: a quick rising trill, alternating notes climbing an octave,
+  /// 0.24 s in all.
+  public static let scan = (0..<12).map { k in
+    Note(frequency: 660 * pow(2, Double(k / 2) / 5) * (k % 2 == 0 ? 1 : 1.25), duration: 0.02)
+  }
+  /// Something went wrong: two falling low notes.
+  public static let oops = [Note(frequency: 330, duration: 0.12), Note(frequency: 220, duration: 0.2)]
 
   /// Seconds each note takes to rise from silence, and to fall back to it, so notes never click.
   static let ramp = 0.005

@@ -24,6 +24,13 @@ import Testing
     var s = BlipSettings(); s.comet = false
     #expect(try JSONDecoder().decode(BlipSettings.self, from: JSONEncoder().encode(s)).comet == false)
   }
+  @Test func behaviorSwitchesDefaultOnAndToleratesMissingKeys() throws {
+    let s = BlipSettings(); #expect(s.followPointer && s.moods && s.scanBeam)
+    let old = try JSONDecoder().decode(BlipSettings.self, from: Data(#"{"name":"Old"}"#.utf8))
+    #expect(old.followPointer && old.moods && old.scanBeam)
+    var off = BlipSettings(); off.followPointer = false; off.moods = false; off.scanBeam = false
+    #expect(try JSONDecoder().decode(BlipSettings.self, from: JSONEncoder().encode(off)) == off)
+  }
   @Test func displayNameFallsBack() {
     var s = BlipSettings(); #expect(s.displayName == "Blip")
     s.name = "  Zap "; #expect(s.displayName == "Zap")

@@ -1,8 +1,8 @@
 import Foundation
 
-/// The six exhaust trails, ported from `trail()` in `docs/reference/mockup.html`.
+/// The exhaust trails: the first six ported from `trail()` in `docs/reference/mockup.html`, then snow.
 public enum TrailStyle: String, Codable, CaseIterable {
-  case comet, flame, rings, echoes, lightning, confetti
+  case comet, flame, rings, echoes, lightning, confetti, snow
 }
 
 /// A SplitMix64 generator: the same seed always gives the same sequence.
@@ -30,7 +30,7 @@ public struct SeededRandom {
 /// rate is computed from it, so nothing changes abruptly when the ship stops.
 /// All randomness is drawn in `tick`; `draw` only renders the stored state.
 public struct TrailSystem {
-  /// A moving trail element: a comet point, ring, echo or confetti piece.
+  /// A moving trail element: a comet point, ring, echo, confetti piece or snowflake.
   private struct Particle {
     var x: Double
     var y: Double
@@ -110,6 +110,7 @@ public struct TrailSystem {
     case .echoes: tickEchoes()
     case .lightning: tickLightning()
     case .confetti: tickConfetti()
+    case .snow: tickSnow()
     }
   }
 
@@ -123,6 +124,7 @@ public struct TrailSystem {
     case .echoes: drawEchoes(into: &b, ramp: ramp, silhouette: silhouette)
     case .lightning: drawLightning(into: &b, ramp: ramp)
     case .confetti: drawConfetti(into: &b, ramp: ramp)
+    case .snow: drawSnow(into: &b, ramp: ramp)
     }
   }
 
@@ -195,6 +197,22 @@ public struct TrailSystem {
     ageParticles()
   }
 
+  /// Like confetti but gentler: fewer pieces, falling slowly with a wider, slower sway. Most flakes
+  /// are small; about half are white, most of the rest the ramp's light color.
+  private mutating func tickSnow() {
+    if spawnDue(every: Int((12 - 8 * power).rounded())) {
+      let x = Double(shipX) + (random.next() - 0.5) * 14
+      let vx = (random.next() - 0.5) * 0.3
+      let vy = 0.2 + random.next() * 0.2 + 0.3 * power
+      let s = random.next(), t = random.next()
+      let shape = s < 0.25 ? 0 : (s < 0.65 ? 1 : 2)
+      let tint = t < 0.5 ? 0 : (t < 0.9 ? 1 : 2)
+      particles.append(
+        Particle(x: x, y: Double(exhaustY), life: 48 + 18 * power, vx: vx, vy: vy, shape: shape, tint: tint))
+    }
+    ageParticles()
+  }
+
   /// Moves every particle on by one tick, the way its style moves it.
   private mutating func ageParticles() {
     for i in particles.indices {
@@ -206,6 +224,10 @@ public struct TrailSystem {
       case .confetti:
         let p = particles[i]
         particles[i].x += p.vx + sin(Double(p.age + p.shape * 9) / 6) * 0.27
+        particles[i].y += p.vy
+      case .snow:
+        let p = particles[i]
+        particles[i].x += p.vx + sin(Double(p.age + p.shape * 11) / 10) * 0.18
         particles[i].y += p.vy
       case .flame, .lightning: break
       }
@@ -294,6 +316,16 @@ public struct TrailSystem {
       if p.fraction > 0.7 && tickCount % 2 == 1 { continue }
       b.draw(
         Art.confetti[p.shape], x: Int(p.x.rounded()), y: Int(p.y.rounded()), palette: [:], mono: tints[p.tint])
+    }
+  }
+
+  private func drawSnow(into b: inout PixelBuffer, ramp: ColorRamp) {
+    let tints = [ramp.white, ramp.light, ramp.main]
+    for p in particles {
+      if p.fraction > 0.75 && tickCount % 2 == 1 { continue }
+      let flake = Art.snowflakes[p.shape]
+      let x = Int(p.x.rounded()) - flake.width / 2, y = Int(p.y.rounded())
+      b.draw(flake, x: x, y: y, palette: [:], mono: tints[p.tint])
     }
   }
 }

@@ -15,24 +15,14 @@ public enum Thumbnail {
   public static func creature(_ c: Creature) -> PixelBuffer {
     let art = Art.creature(c)
     var b = PixelBuffer(width: 18, height: 15)
-    b.draw(
-      art.sprite, x: 1, y: 1,
-      palette: [
-        "k": Art.outline, "X": art.body, "s": art.shade, "h": art.highlight, "o": Art.outline,
-        "w": Scene.white, "b": 0xFB7185FF, "m": Art.outline, "p": 0xF472B6FF, "a": Scene.yellow,
-      ])
+    b.draw(art.sprite, x: 1, y: 1, palette: Art.creaturePalette(art))
     return b
   }
 
   /// 26 by 11, the ship at (1, 1) with red trim.
   public static func ship(_ s: Ship) -> PixelBuffer {
     var b = PixelBuffer(width: 26, height: 11)
-    b.draw(
-      Art.ship(s), x: 1, y: 1,
-      palette: [
-        "k": Art.outline, "H": 0xE8EAF0FF, "L": 0xFFFFFFFF, "D": 0x9AA1B2FF, "R": trim,
-        "T": 0x3A3F52FF, "o": 0x5B6378FF, "y": Scene.yellow,
-      ])
+    b.draw(Art.ship(s), x: 1, y: 1, palette: Art.shipPalette(trim: trim))
     return b
   }
 

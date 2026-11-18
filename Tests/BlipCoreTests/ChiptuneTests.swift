@@ -14,10 +14,13 @@ import Testing
     #expect(Chiptune.launch.map(\.frequency) == Chiptune.launch.map(\.frequency).sorted())
     #expect(Chiptune.reply.map(\.frequency) == [880, 1320])
     #expect(Chiptune.flyOff.map(\.frequency) == Chiptune.flyOff.map(\.frequency).sorted(by: >))
+    #expect(Chiptune.oops.map(\.frequency) == Chiptune.oops.map(\.frequency).sorted(by: >))
+    #expect(Chiptune.scan.last!.frequency > Chiptune.scan.first!.frequency)
+    #expect(abs(Chiptune.scan.map(\.duration).reduce(0, +) - 0.25) < 0.02)
   }
   /// Each effect, rendered as Blip plays it, is audible and never louder than its volume.
   @Test func effectsAreNonSilentAndWithinTheVolume() {
-    for notes in [Chiptune.launch, Chiptune.reply, Chiptune.flyOff] {
+    for notes in [Chiptune.launch, Chiptune.reply, Chiptune.flyOff, Chiptune.scan, Chiptune.oops] {
       let s = Chiptune.render(notes, sampleRate: 48000, volume: 0.15)
       let peak = s.map(\.magnitude).max() ?? 0
       #expect(peak == 0.15)

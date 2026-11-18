@@ -1,24 +1,33 @@
 // blip-snap: renders one Scene frame to a PNG so the look can be checked by eye.
 //
 //   blip-snap --creature <c> --ship <s> --trail <t> --color <preset> --tick <n> --out <file.png>
-//             [--dismiss <tick>] [--thinking]
+//             [--dismiss <tick>] [--thinking] [--scale <n>] [--look x,y] [--mood <mood>] [--scan <ticksAgo>]
+//
+// `--mood` runs the scene until it hovers and then into that mood, ignoring `--tick`.
 
 import BlipCore
 import CoreGraphics
 import Foundation
 import ImageIO
 
-let bufferWidth = 240, bufferHeight = 200, scale = 3
+let bufferWidth = 240, bufferHeight = 200
+var scale = 3
 let background: RGBA = 0x12121CFF
 let colorPresets: [String: TrailColor] = [
   "fire": .fire, "pink": .pink, "cyan": .cyan, "lime": .lime, "violet": .violet,
 ]
+let moods = ["happy", "startled", "reading", "yawn", "asleep"]
 let usage = """
   usage: blip-snap --creature <\(Creature.allCases.map(\.rawValue).joined(separator: "|"))>
                    --ship <\(Ship.allCases.map(\.rawValue).joined(separator: "|"))>
                    --trail <\(TrailStyle.allCases.map(\.rawValue).joined(separator: "|"))>
                    --color <\(colorPresets.keys.sorted().joined(separator: "|"))>
                    --tick <n> --out <file.png> [--dismiss <tick>] [--thinking]
+                   [--scale <n>] [--look <x,y>] [--mood <\(moods.joined(separator: "|"))>] [--scan <ticksAgo>]
+    --scale  screen pixels per arcade pixel in the PNG (default 3)
+    --look   the pointer in arcade pixels, for the eyes to follow (the buffer is \(bufferWidth)x\(bufferHeight))
+    --mood   runs the scene until it hovers, then into the mood, and shows it mid-way; --tick is ignored
+    --scan   a whole-buffer scan beam started that many ticks before the snapshot
   """
 
 func fail(_ message: String) -> Never {
@@ -36,6 +45,9 @@ var ticks = 60
 var dismissAt: Int?
 var outPath: String?
 var thinking = false
+var look: (x: Int, y: Int)?
+var mood: String?
+var scanAgo: Int?
 
 var args = CommandLine.arguments.dropFirst().makeIterator()
 while let flag = args.next() {
@@ -52,7 +64,15 @@ while let flag = args.next() {
   case "--aura": settings.aura = parse(flag, value, AuraStyle.init(rawValue:))
   case "--tick": ticks = parse(flag, value) { Int($0).flatMap { $0 >= 0 ? $0 : nil } }
   case "--out": outPath = value
+  case "--scale": scale = parse(flag, value) { Int($0).flatMap { (1...16).contains($0) ? $0 : nil } }
   case "--dismiss": dismissAt = parse(flag, value) { Int($0).flatMap { $0 >= 0 ? $0 : nil } }
+  case "--look":
+    look = parse(flag, value) { v in
+      let parts = v.split(separator: ",").compactMap { Int($0) }
+      return parts.count == 2 ? (parts[0], parts[1]) : nil
+    }
+  case "--mood": mood = parse(flag, value) { moods.contains($0) ? $0 : nil }
+  case "--scan": scanAgo = parse(flag, value) { Int($0).flatMap { $0 >= 0 ? $0 : nil } }
   default: fail("unknown option \(flag)")
   }
 }
@@ -60,8 +80,33 @@ guard let outPath else { fail("--out is required") }
 
 var scene = Scene(settings: settings, bufferWidth: bufferWidth, bufferHeight: bufferHeight, seed: 1)
 scene.thinking = thinking
+
+// With a mood, find the tick the hover starts on, then plan the mood from there.
+var moodAt: Int?
+if let mood {
+  var probe = scene, hoverAt = 0
+  while probe.phase != .hover { probe.tick(); hoverAt += 1 }
+  let settled = hoverAt + 60
+  switch mood {
+  case "happy": (moodAt, ticks) = (settled, settled + 26)
+  case "startled": (moodAt, ticks) = (settled, settled + 8)
+  case "reading": (moodAt, ticks) = (settled, settled + 25)
+  case "yawn": ticks = hoverAt + 1525  // the idle clock counts hover ticks; the yawn starts at 1500
+  default: ticks = hoverAt + 2740  // asleep at 2700, a "z" part way up
+  }
+}
+
 for t in 0..<ticks {
   if t == dismissAt { scene.dismiss() }
+  if t == moodAt {
+    switch mood {
+    case "happy": scene.react(.happy)
+    case "startled": scene.react(.startled)
+    default: scene.reading = true
+    }
+  }
+  if let scanAgo, t == ticks - scanAgo { scene.scan(nil) }
+  if let look { scene.look(at: look) }
   scene.tick()
 }
 
