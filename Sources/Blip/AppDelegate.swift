@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var pool: BrainPool?
   /// The chat of the summon in progress, if any.
   private var conversation: Conversation?
+  private var sounds: SoundPlayer?
   private var hotKeys: HotKeyCenter?
   /// Debug aids: `kill -USR1 <pid>` does what the shortcut does; `kill -USR2 <pid>` opens Settings.
   private var signalSources: [DispatchSourceSignal] = []
@@ -26,12 +27,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     self.pool = pool
     let summon = SummonController(settings: settings)
     self.summon = summon
+    let sounds = SoundPlayer(settings: settings)
+    self.sounds = sounds
     summon.onSummoned = { [weak self, weak summon] screen in
       guard let self else { return }
+      sounds.play(Chiptune.launch)
       let conversation = Conversation(pool: pool, settings: settings(), screen: screen)
       conversation.onThinkingChanged = { [weak self, weak summon, weak conversation] thinking in
         guard let conversation, self?.conversation === conversation else { return }
         summon?.thinking = thinking
+      }
+      conversation.onReplyStarted = { [weak self, weak conversation] in
+        guard let conversation, self?.conversation === conversation else { return }
+        sounds.play(Chiptune.reply)
       }
       self.conversation = conversation
     }
@@ -43,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // The chat leaves with the fly-off; a summon replaced without one is closed when it ends.
     summon.onFlyOff = { [weak self, weak summon] in
+      sounds.play(Chiptune.flyOff)
       summon?.thinking = false  // a reply cut off by the fly-off is no longer being thought about
       self?.endConversation()
     }

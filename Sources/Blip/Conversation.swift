@@ -11,6 +11,8 @@ import BlipCore
 
   /// Whether the ship should show it is thinking.
   var onThinkingChanged: ((Bool) -> Void)?
+  /// The first words of an answer appeared: once per question, never for the hidden close-up exchange.
+  var onReplyStarted: (() -> Void)?
 
   private let model = ChatModel()
   private let panel: ChatPanel
@@ -177,7 +179,7 @@ import BlipCore
     case .textDelta(let delta):
       guard gate != nil else { return }
       let shown = gate!.feed(delta)
-      if !shown.isEmpty { model.log.append(delta: shown) }
+      show(shown)
     case .messageDone:
       replyEnded()
     case .result(let text, let isError):
@@ -203,8 +205,16 @@ import BlipCore
     }
   }
 
-  private func finish(appending text: String) {
+  /// Adds reply text to the panel, telling `onReplyStarted` when it is the answer's first.
+  private func show(_ text: String) {
+    guard !text.isEmpty else { return }
+    let first = model.log.awaitingFirstText
     model.log.append(delta: text)
+    if first && !model.log.awaitingFirstText { onReplyStarted?() }
+  }
+
+  private func finish(appending text: String) {
+    show(text)
     model.log.finish()
     stoppedWaiting()
   }
