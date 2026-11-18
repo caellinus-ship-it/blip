@@ -1,207 +1,257 @@
 import AppKit
 import BlipCore
-import Combine
 import SwiftUI
 
-/// The settings window: a live preview of the character on the left, every option on the right.
-/// Every change is saved and applied at once.
+/// The settings window: the stage on the left, flying the current combination, with the name plate
+/// and Launch under it; every option on the right, in panels. Every change is saved and applied at once.
 struct SettingsView: View {
-  static let size = CGSize(width: 560, height: 520)
+  static let size = CGSize(width: 760, height: 600)
+  /// Tall enough that Launch lines up with the bottom of the options column.
+  static let stageSize = CGSize(width: 320, height: 452)
+  private static let margin: CGFloat = 20
 
   @ObservedObject var store: SettingsStore
-  /// The shortcut recorder started (`true`) or stopped (`false`) listening.
-  var onRecordingShortcut: (Bool) -> Void = { _ in }
+  var shortcut = ShortcutHooks()
 
   /// The last custom personality typed, kept while another personality is picked.
   @State private var customPersonality = ""
   /// What "Find automatically" found: `nil` before it is pressed, `""` when nothing was found.
   @State private var foundClaude: String?
+  /// Bumped by Launch to replay the fly-in.
+  @State private var launches = 0
+  /// Start at login as macOS has it, read when the window opens and after each change.
+  @State private var loginOn = LoginItem.isOn
+  @State private var loginNeedsApproval = LoginItem.needsApproval
 
   private var settings: Binding<BlipSettings> { $store.settings }
+  private var accent: Color { SettingsTheme.accent(store.settings.trailColor) }
 
   var body: some View {
-    HStack(alignment: .top, spacing: 0) {
-      VStack(spacing: 10) {
-        CharacterPreview(settings: store.settings)
-          .frame(width: CharacterPreview.size.width, height: CharacterPreview.size.height)
-          .background(RoundedRectangle(cornerRadius: 10).fill(Color(rgba: 0x262A3AFF)))
-          .clipShape(RoundedRectangle(cornerRadius: 10))
-        Text(store.settings.name)
-          .font(.headline)
+    HStack(alignment: .top, spacing: Self.margin) {
+      stageColumn
+        .frame(width: Self.stageSize.width)
+        .padding(.vertical, Self.margin)
+      ScrollView {
+        optionsColumn
+          .padding(.vertical, Self.margin)
+          .padding(.trailing, Self.margin)
       }
-      .padding(20)
-      .frame(width: CharacterPreview.size.width + 40)
-
-      Form {
-        character
-        look
-        Section("Motion") {
-          Picker("Motion", selection: settings.hover) {
-            Text("Figure 8").tag(HoverMotion.figure8)
-            Text("Simple bob").tag(HoverMotion.bob)
-            Text("Still").tag(HoverMotion.still)
-          }
-          .accessibilityLabel("Motion")
-        }
-        personality
-        Section("Answers") {
-          Picker("Answers", selection: settings.answers) {
-            Text("Short").tag(AnswerLength.short)
-            Text("Detailed").tag(AnswerLength.detailed)
-          }
-          .accessibilityLabel("Answers")
-        }
-        Section("Brain") {
-          Picker("Brain", selection: settings.model) {
-            Text("Fastest").tag(BrainModel.fastest)
-            Text("Smarter").tag(BrainModel.smarter)
-          }
-          .accessibilityLabel("Brain")
-        }
-        Section("Sounds") {
-          Toggle("Sounds", isOn: settings.sounds)
-            .accessibilityLabel("Sounds")
-        }
-        Section("Shortcut") {
-          LabeledContent("Shortcut") {
-            HotKeyRecorder(hotKey: settings.hotKey, onRecordingChanged: onRecordingShortcut)
-              .frame(width: 140)
-          }
-        }
-        Section("Start at login") {
-          Toggle("Start at login", isOn: settings.launchAtLogin)
-            .accessibilityLabel("Start at login")
-        }
-        advanced
-      }
-      .formStyle(.grouped)
     }
+    .padding(.leading, Self.margin)
     .frame(width: Self.size.width, height: Self.size.height)
+    .background(SettingsTheme.background)
+    .foregroundStyle(SettingsTheme.text)
+    .tint(accent)
+    .preferredColorScheme(.dark)
     .onAppear {
       if case .custom(let text) = store.settings.personality { customPersonality = text }
+      refreshLogin()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+      refreshLogin()  // the owner may have changed it in System Settings
     }
   }
 
-  // MARK: Groups
+  // MARK: Left: the stage
 
-  private var character: some View {
-    Section("Character") {
-      TextField("Name", text: settings.name)
-        .accessibilityLabel("Name")
-      Picker("Creature", selection: settings.creature) {
-        Text("Blob").tag(Creature.blob)
-        Text("Ghost").tag(Creature.ghost)
-        Text("Cat").tag(Creature.cat)
-        Text("Alien").tag(Creature.alien)
+  private var stageColumn: some View {
+    VStack(spacing: 12) {
+      CharacterPreview(size: Self.stageSize, settings: store.settings, launches: launches)
+        .frame(width: Self.stageSize.width, height: Self.stageSize.height)
+        .background(SettingsTheme.well)
+        .overlay(RoundedRectangle(cornerRadius: SettingsTheme.cornerRadius).strokeBorder(SettingsTheme.line))
+        .clipShape(RoundedRectangle(cornerRadius: SettingsTheme.cornerRadius))
+      namePlate
+      Button { launches += 1 } label: {
+        Label("Launch", systemImage: "arrow.up")
+          .frame(maxWidth: .infinity, minHeight: 24)
       }
-      .accessibilityLabel("Creature")
-      Picker("Ship", selection: settings.ship) {
-        Text("Rocket").tag(Ship.rocket)
-        Text("Saucer").tag(Ship.saucer)
-        Text("Bubble pod").tag(Ship.pod)
-        Text("Star ship").tag(Ship.star)
-      }
-      .accessibilityLabel("Ship")
-      Picker("Size", selection: settings.size) {
-        Text("Small").tag(SizeOption.small)
-        Text("Medium").tag(SizeOption.medium)
-        Text("Large").tag(SizeOption.large)
-      }
-      .accessibilityLabel("Size")
+      .buttonStyle(ArcadeButtonStyle(fill: accent, textColor: SettingsTheme.background))
+      .accessibilityLabel("Launch")
     }
   }
 
-  private var look: some View {
-    Section("Look") {
-      Picker("Trail", selection: settings.trail) {
-        Text("Comet").tag(TrailStyle.comet)
-        Text("Flame").tag(TrailStyle.flame)
-        Text("Smoke rings").tag(TrailStyle.rings)
-        Text("Echoes").tag(TrailStyle.echoes)
-        Text("Lightning").tag(TrailStyle.lightning)
-        Text("Confetti").tag(TrailStyle.confetti)
+  private var namePlate: some View {
+    TextField("Name", text: settings.name, prompt: Text("Blip").foregroundStyle(SettingsTheme.secondaryText))
+      .textFieldStyle(.plain)
+      .font(.system(size: 22, weight: .semibold))
+      .multilineTextAlignment(.center)
+      .foregroundStyle(SettingsTheme.text)
+      .padding(.horizontal, 36)
+      .frame(height: 48)
+      .background(SettingsTheme.panel)
+      .overlay(alignment: .trailing) {
+        Image(systemName: "pencil")
+          .foregroundStyle(SettingsTheme.secondaryText)
+          .padding(.trailing, 14)
+          .accessibilityHidden(true)
       }
-      .accessibilityLabel("Trail")
-      HStack(spacing: 6) {
-        Text("Trail color")
-        Spacer()
-        HStack(spacing: 6) {
-          ForEach(Self.trailPresets, id: \.name) { preset in
-            swatch(preset.color, name: preset.name)
-          }
+      .overlay(alignment: .bottom) { Rectangle().fill(accent).frame(height: 2) }
+      .clipShape(RoundedRectangle(cornerRadius: SettingsTheme.cornerRadius))
+      .accessibilityLabel("Name")
+  }
+
+  // MARK: Right: the options
+
+  private var optionsColumn: some View {
+    VStack(spacing: 12) {
+      SettingsPanel(title: "Creature") {
+        TilePicker(
+          label: "Creature",
+          options: [(.blob, "Blob"), (.ghost, "Ghost"), (.cat, "Cat"), (.alien, "Alien")],
+          images: ThumbnailImages.creatures, scale: 4, columns: 4, selection: settings.creature, accent: accent)
+      }
+      SettingsPanel(title: "Ship") {
+        TilePicker(
+          label: "Ship",
+          options: [(.rocket, "Rocket"), (.saucer, "Saucer"), (.pod, "Bubble pod"), (.star, "Star ship")],
+          images: ThumbnailImages.ships, scale: 3, columns: 4, selection: settings.ship, accent: accent)
+      }
+      SettingsPanel(title: "Trail") {
+        TilePicker(
+          label: "Trail",
+          options: [
+            (.comet, "Comet"), (.flame, "Flame"), (.rings, "Smoke rings"),
+            (.echoes, "Echoes"), (.lightning, "Lightning"), (.confetti, "Confetti"),
+          ],
+          images: ThumbnailImages.trails(ColorRamp(store.settings.trailColor)), scale: 2, columns: 3,
+          selection: settings.trail, accent: accent)
+      }
+      colors
+      SettingsPanel(title: "Flight") {
+        SettingRow(label: "Comet entrance") {
+          Toggle("Comet entrance", isOn: settings.comet)
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .accessibilityLabel("Comet entrance")
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Trail color presets")
+        SettingRow(label: "Size") {
+          segmented("Size", settings.size, [(.small, "Small"), (.medium, "Medium"), (.large, "Large")])
+        }
+        SettingRow(label: "Motion") {
+          segmented("Motion", settings.hover, [(.figure8, "Figure 8"), (.bob, "Simple bob"), (.still, "Still")])
+        }
+      }
+      assistant
+      app
+    }
+  }
+
+  private var colors: some View {
+    SettingsPanel(title: "Colors") {
+      SettingRow(label: "Trail") {
+        TrailSwatches(trailColor: settings.trailColor)
         ColorPicker("Custom trail color", selection: customTrailColor, supportsOpacity: false)
           .labelsHidden()
       }
-      Toggle("Comet entrance", isOn: settings.comet)
-        .accessibilityLabel("Comet entrance")
-      Toggle("Aura matches creature", isOn: auraMatchesCreature)
-        .accessibilityLabel("Aura matches creature")
-      ColorPicker("Aura color", selection: auraColor, supportsOpacity: false)
-        .accessibilityLabel("Aura color")
-        .disabled(store.settings.auraColor == nil)
-      ColorPicker("Bubble color", selection: bubbleColor, supportsOpacity: false)
-        .accessibilityLabel("Bubble color")
+      SettingRow(label: "Aura") {
+        Toggle("Match creature", isOn: auraMatchesCreature)
+          .toggleStyle(.switch)
+          .foregroundStyle(SettingsTheme.secondaryText)
+          .accessibilityLabel("Aura matches creature")
+        ColorPicker("Aura color", selection: auraColor, supportsOpacity: false)
+          .labelsHidden()
+          .disabled(store.settings.auraColor == nil)
+          .opacity(store.settings.auraColor == nil ? 0.4 : 1)
+      }
+      SettingRow(label: "Chat bubbles") {
+        ColorPicker("Bubble color", selection: bubbleColor, supportsOpacity: false)
+          .labelsHidden()
+      }
     }
   }
 
-  private var personality: some View {
-    Section("Personality") {
-      Picker("Personality", selection: personalityKind) {
-        Text("Playful").tag(PersonalityKind.playful)
-        Text("Plain").tag(PersonalityKind.plain)
-        Text("My own").tag(PersonalityKind.custom)
+  private var assistant: some View {
+    SettingsPanel(title: "Assistant") {
+      SettingRow(label: "Personality") {
+        segmented("Personality", personalityKind, [(.playful, "Playful"), (.plain, "Plain"), (.custom, "My own")])
       }
-      .accessibilityLabel("Personality")
       if case .custom = store.settings.personality {
         TextField("Description", text: customPersonalityText, prompt: Text("a sleepy wizard who loves puns"),
                   axis: .vertical)
           .lineLimit(2...4)
+          .textFieldStyle(ArcadeFieldStyle())
           .accessibilityLabel("Personality description")
       }
+      SettingRow(label: "Answers") {
+        segmented("Answers", settings.answers, [(.short, "Short"), (.detailed, "Detailed")])
+      }
+      SettingRow(label: "Brain") {
+        segmented("Brain", settings.model, [(.fastest, "Fastest"), (.smarter, "Smarter")])
+      }
+    }
+  }
+
+  private var app: some View {
+    SettingsPanel(title: "App") {
+      SettingRow(label: "Sounds") {
+        Toggle("Sounds", isOn: settings.sounds)
+          .toggleStyle(.switch)
+          .labelsHidden()
+          .accessibilityLabel("Sounds")
+      }
+      SettingRow(label: "Shortcut") {
+        HotKeyRecorder(hotKey: settings.hotKey, hooks: shortcut)
+          .frame(width: 150)
+      }
+      SettingRow(label: "Start at login") {
+        Toggle("Start at login", isOn: startAtLogin)
+          .toggleStyle(.switch)
+          .labelsHidden()
+          .accessibilityLabel("Start at login")
+      }
+      if loginNeedsApproval {
+        Text("Allow Blip in System Settings, under Login Items.")
+          .font(.caption)
+          .foregroundStyle(SettingsTheme.secondaryText)
+      }
+      advanced
     }
   }
 
   private var advanced: some View {
-    Section("Advanced") {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Path to claude")
+        .foregroundStyle(SettingsTheme.text)
+        .padding(.top, 4)
       TextField("claude", text: claudePath, prompt: Text("Found automatically"))
+        .textFieldStyle(ArcadeFieldStyle())
         .accessibilityLabel("Path to claude")
-      HStack {
-        Button("Find automatically") {
-          store.settings.claudePath = nil
-          foundClaude = Self.locateClaude() ?? ""
-        }
+      HStack(spacing: 8) {
+        Button("Find automatically") { foundClaude = Self.locateClaude() ?? "" }
+          .buttonStyle(ArcadeButtonStyle(fill: SettingsTheme.panel, textColor: SettingsTheme.text, border: SettingsTheme.line))
+          .fixedSize()
         if let foundClaude {
           Text(foundClaude.isEmpty ? "Not found" : foundClaude)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(SettingsTheme.secondaryText)
             .lineLimit(1)
             .truncationMode(.middle)
             .textSelection(.enabled)
+          if !foundClaude.isEmpty && store.settings.claudePath != nil {
+            Spacer(minLength: 0)
+            Button("Use") { store.settings.claudePath = nil }
+              .buttonStyle(ArcadeButtonStyle(fill: SettingsTheme.panel, textColor: accent, border: accent))
+              .fixedSize()
+              .accessibilityLabel("Use found claude")
+          }
         }
       }
     }
   }
 
-  // MARK: Trail color
+  // MARK: Controls
 
-  private static let trailPresets: [(name: String, color: TrailColor)] = [
-    ("Fire", .fire), ("Pink", .pink), ("Cyan", .cyan), ("Lime", .lime), ("Violet", .violet),
-  ]
-
-  private func swatch(_ color: TrailColor, name: String) -> some View {
-    let selected = store.settings.trailColor == color
-    return Button { store.settings.trailColor = color } label: {
-      Label("\(name) trail", systemImage: selected ? "smallcircle.filled.circle.fill" : "circle.fill")
-        .labelStyle(.iconOnly)
-        .font(.system(size: 18))
-        .foregroundStyle(Color(rgba: ColorRamp(color).main))
+  private func segmented<T: Hashable>(_ label: String, _ selection: Binding<T>, _ options: [(T, String)]) -> some View {
+    Picker(label, selection: selection) {
+      ForEach(options, id: \.0) { option in Text(option.1).tag(option.0) }
     }
-    .buttonStyle(.plain)
-    .accessibilityAddTraits(selected ? .isSelected : [])
+    .pickerStyle(.segmented)
+    .labelsHidden()  // the picker's own title is still its accessibility label
+    .fixedSize()
   }
+
+  // MARK: Colors
 
   /// The color well: shows the custom color, or the preset's main color until one is picked.
   private var customTrailColor: Binding<Color> {
@@ -214,8 +264,6 @@ struct SettingsView: View {
         store.settings.trailColor = .custom(rgba)
       })
   }
-
-  // MARK: Other colors
 
   private var auraMatchesCreature: Binding<Bool> {
     Binding(
@@ -269,6 +317,24 @@ struct SettingsView: View {
       })
   }
 
+  // MARK: Start at login
+
+  /// Shows what macOS has; turning it on or off changes the setting, or, when the setting already
+  /// says so but macOS disagrees, asks macOS again.
+  private var startAtLogin: Binding<Bool> {
+    Binding(
+      get: { loginOn },
+      set: { on in
+        if store.settings.launchAtLogin == on { LoginItem.set(on) } else { store.settings.launchAtLogin = on }
+        refreshLogin()
+      })
+  }
+
+  private func refreshLogin() {
+    loginOn = LoginItem.isOn
+    loginNeedsApproval = LoginItem.needsApproval
+  }
+
   // MARK: Advanced
 
   private var claudePath: Binding<String> {
@@ -277,7 +343,6 @@ struct SettingsView: View {
       set: { path in
         let trimmed = path.trimmingCharacters(in: .whitespaces)
         store.settings.claudePath = trimmed.isEmpty ? nil : trimmed
-        foundClaude = nil
       })
   }
 
@@ -294,191 +359,5 @@ extension Color {
     guard let c = NSColor(self).usingColorSpace(.sRGB) else { return 0x000000FF }
     func byte(_ v: CGFloat) -> RGBA { RGBA((min(max(v, 0), 1) * 255).rounded()) }
     return byte(c.redComponent) << 24 | byte(c.greenComponent) << 16 | byte(c.blueComponent) << 8 | 0xFF
-  }
-}
-
-// MARK: - Preview
-
-/// The current character hovering, run by the same `Scene` as the overlay, one arcade pixel per
-/// `pointsPerPixel` points. It animates only while it is in a window.
-struct CharacterPreview: NSViewRepresentable {
-  static let bufferWidth = 96
-  static let bufferHeight = 110
-  static let pointsPerPixel = 2
-  static let size = CGSize(width: bufferWidth * pointsPerPixel, height: bufferHeight * pointsPerPixel)
-
-  let settings: BlipSettings
-
-  func makeNSView(context: Context) -> PreviewView { PreviewView(settings: settings) }
-
-  func updateNSView(_ view: PreviewView, context: Context) { view.show(settings) }
-
-  final class PreviewView: NSView {
-    private static let tickSeconds: CFTimeInterval = 1.0 / 60
-    private static let maxTicksPerFrame = 4
-
-    /// The settings the preview draws; a change to any of them restarts the scene.
-    private struct Look: Equatable {
-      let creature: Creature, ship: Ship, trail: TrailStyle, trailColor: TrailColor
-      let auraColor: RGBA?, hover: HoverMotion
-
-      init(_ s: BlipSettings) {
-        (creature, ship, trail, trailColor, auraColor, hover) =
-          (s.creature, s.ship, s.trail, s.trailColor, s.auraColor, s.hover)
-      }
-    }
-
-    private var look: Look
-    private var scene: BlipCore.Scene
-    private var buffer = PixelBuffer(width: CharacterPreview.bufferWidth, height: CharacterPreview.bufferHeight)
-    private let pixelLayer = CALayer()
-    private var link: CADisplayLink?
-    private var lastTimestamp: CFTimeInterval?
-    private var accumulator: CFTimeInterval = 0
-
-    init(settings: BlipSettings) {
-      look = Look(settings)
-      scene = Self.hoveringScene(settings)
-      super.init(frame: NSRect(origin: .zero, size: CharacterPreview.size))
-      wantsLayer = true
-      pixelLayer.frame = bounds
-      pixelLayer.magnificationFilter = .nearest
-      pixelLayer.actions = ["contents": NSNull()]  // no cross-fade between frames
-      layer?.addSublayer(pixelLayer)
-      setAccessibilityElement(true)
-      setAccessibilityRole(.image)
-      setAccessibilityLabel("Preview")
-      render()
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override func layout() {
-      super.layout()
-      pixelLayer.frame = bounds
-    }
-
-    /// Restarts the scene if `settings` look different from what is shown.
-    func show(_ settings: BlipSettings) {
-      let new = Look(settings)
-      guard new != look else { return }
-      look = new
-      scene = Self.hoveringScene(settings)
-      render()
-    }
-
-    /// The display link holds on to the view, so it runs only while the view is in a window.
-    override func viewDidMoveToWindow() {
-      super.viewDidMoveToWindow()
-      if window == nil {
-        link?.invalidate()
-        link = nil
-      } else if link == nil {
-        lastTimestamp = nil
-        accumulator = 0
-        let l = displayLink(target: self, selector: #selector(frame(_:)))
-        l.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 60, preferred: 60)
-        l.add(to: .main, forMode: .common)
-        link = l
-      }
-    }
-
-    @objc private func frame(_ link: CADisplayLink) {
-      if let last = lastTimestamp { accumulator += link.timestamp - last }
-      lastTimestamp = link.timestamp
-      var ticks = Int(accumulator / Self.tickSeconds + 0.05)
-      if ticks > Self.maxTicksPerFrame {
-        ticks = Self.maxTicksPerFrame
-        accumulator = 0
-      } else {
-        accumulator -= Double(ticks) * Self.tickSeconds
-      }
-      guard ticks > 0 else { return }
-      for _ in 0..<ticks { scene.tick() }
-      render()
-    }
-
-    private func render() {
-      buffer.clear()
-      scene.render(into: &buffer)
-      pixelLayer.contents = buffer.makeImage()
-    }
-
-    /// A scene already past its fly-in, hovering in the middle of the buffer.
-    private static func hoveringScene(_ settings: BlipSettings) -> BlipCore.Scene {
-      var scene = BlipCore.Scene(
-        settings: settings, bufferWidth: CharacterPreview.bufferWidth,
-        bufferHeight: CharacterPreview.bufferHeight, seed: 1)
-      for _ in 0..<SummonController.settleTicks { scene.tick() }
-      return scene
-    }
-  }
-}
-
-// MARK: - Window
-
-/// Owns the settings window. The window is built when it is shown and thrown away when it closes,
-/// which also stops the preview.
-@MainActor final class SettingsWindowController: NSObject, NSWindowDelegate {
-  private let store: SettingsStore
-  private let onRecordingShortcut: (Bool) -> Void
-  private var window: NSWindow?
-  private var titleWatch: AnyCancellable?
-
-  init(store: SettingsStore, onRecordingShortcut: @escaping (Bool) -> Void) {
-    self.store = store
-    self.onRecordingShortcut = onRecordingShortcut
-  }
-
-  func show() {
-    let window = self.window ?? makeWindow()
-    self.window = window
-    NSApp.activate()
-    window.makeKeyAndOrderFront(nil)
-    window.orderFrontRegardless()  // in front even when macOS declines the activation
-  }
-
-  private func makeWindow() -> NSWindow {
-    let window = SettingsWindow(
-      contentRect: NSRect(origin: .zero, size: SettingsView.size),
-      styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = NSHostingView(
-      rootView: SettingsView(store: store, onRecordingShortcut: onRecordingShortcut))
-    window.delegate = self
-    window.center()
-    titleWatch = store.$settings.map(\.name).removeDuplicates().sink { [weak window] name in
-      window?.title = "\(name) Settings"
-    }
-    return window
-  }
-
-  func windowWillClose(_ notification: Notification) {
-    titleWatch = nil
-    if NSColorPanel.sharedColorPanelExists { NSColorPanel.shared.close() }  // opened by a color well here
-    window?.delegate = nil
-    window?.contentView = nil  // takes the preview out of the window, which stops its display link
-    window = nil
-  }
-}
-
-/// A normal window that also handles the editing shortcuts and Command-W, as Blip has no menu bar
-/// of its own to provide them.
-private final class SettingsWindow: NSWindow {
-  override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-    // The views go first, so the shortcut recorder can record any of these.
-    if super.performKeyEquivalent(with: event) { return true }
-    if event.type == .keyDown, modifiers == .command, key == "w" {
-      performClose(nil)
-      return true
-    }
-    if event.type == .keyDown, modifiers == .command || modifiers == [.command, .shift],
-       let action = ChatPanel.editAction(key: key, shift: modifiers.contains(.shift)),
-       NSApp.sendAction(action, to: nil, from: self) {
-      return true
-    }
-    return false
   }
 }

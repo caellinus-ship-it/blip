@@ -37,7 +37,7 @@ import BlipCore
   init(pool: BrainPool, settings: BlipSettings, screen: NSScreen) {
     self.pool = pool
     self.screen = screen
-    panel = ChatPanel(model: model, name: settings.name, bubbleColor: settings.bubbleColor)
+    panel = ChatPanel(model: model, name: settings.displayName, bubbleColor: settings.bubbleColor)
     session = pool.take()
     adopt(session)
     model.onSend = { [weak self] text in self?.send(text) }

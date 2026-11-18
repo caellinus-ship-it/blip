@@ -1,3 +1,5 @@
+import Foundation
+
 /// How big one arcade pixel is on screen.
 public enum SizeOption: String, Codable, CaseIterable {
   case small, medium, large
@@ -93,5 +95,13 @@ public struct BlipSettings: Codable, Equatable {
     hotKey = try c.decodeIfPresent(HotKey.self, forKey: .hotKey) ?? d.hotKey
     launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
     claudePath = try c.decodeIfPresent(String.self, forKey: .claudePath) ?? d.claudePath
+  }
+}
+
+extension BlipSettings {
+  /// The name to show and to speak as: `name` without surrounding whitespace, or "Blip" when that is empty.
+  public var displayName: String {
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "Blip" : trimmed
   }
 }

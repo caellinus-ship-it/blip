@@ -10,6 +10,8 @@ final class HotKeyCenter {
 
   private let handler: () -> Void
   private var hotKeyRef: EventHotKeyRef?
+  /// The shortcut registered now; `nil` when none is.
+  private var registered: HotKey?
   private var handlerRef: EventHandlerRef?
 
   init(hotKey: HotKey, handler: @escaping () -> Void) {
@@ -30,7 +32,7 @@ final class HotKeyCenter {
         return noErr
       }, 1, &pressed, Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
     if status != noErr { NSLog("Blip: InstallEventHandler failed (\(status))") }
-    register(hotKey)
+    _ = register(hotKey)
   }
 
   deinit {
@@ -38,10 +40,12 @@ final class HotKeyCenter {
     if let handlerRef { RemoveEventHandler(handlerRef) }
   }
 
-  /// Replaces the shortcut, or turns it back on after `suspend`.
-  func update(_ hotKey: HotKey) {
+  /// Replaces the shortcut, or turns it back on after `suspend`. Returns whether it is now registered;
+  /// false when macOS refuses it, usually because it is already in use, which leaves no shortcut on.
+  @discardableResult func update(_ hotKey: HotKey) -> Bool {
+    if registered == hotKey { return true }
     unregister()
-    register(hotKey)
+    return register(hotKey)
   }
 
   /// Turns the shortcut off until the next `update`, so it can be pressed to record it.
@@ -49,18 +53,22 @@ final class HotKeyCenter {
     unregister()
   }
 
-  private func register(_ hotKey: HotKey) {
+  private func register(_ hotKey: HotKey) -> Bool {
     let id = EventHotKeyID(signature: Self.signature, id: Self.hotKeyID)
     let status = RegisterEventHotKey(
       hotKey.keyCode, hotKey.modifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef)
-    if status != noErr {
+    guard status == noErr else {
       NSLog("Blip: RegisterEventHotKey(\(hotKey.keyCode), \(hotKey.modifiers)) failed (\(status))")
       hotKeyRef = nil
+      return false
     }
+    registered = hotKey
+    return true
   }
 
   private func unregister() {
     if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
     hotKeyRef = nil
+    registered = nil
   }
 }

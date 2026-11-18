@@ -3,25 +3,24 @@ import BlipCore
 import Carbon.HIToolbox
 import SwiftUI
 
-/// Records the global shortcut: click it, then press a combination with Command, Option or Control
-/// (Shift may join them). Escape alone cancels, as does clicking elsewhere.
+/// Records the global shortcut: click it, then press a combination with Command or Control (Option
+/// and Shift may join them). Escape alone cancels, as does clicking elsewhere. A combination that
+/// `HotKeyRules` refuses, or that macOS says is taken, is not kept: the button says why for a
+/// moment and the old shortcut stays.
 struct HotKeyRecorder: NSViewRepresentable {
   @Binding var hotKey: HotKey
-  /// Recording started (`true`) or ended (`false`). The global shortcut should be off while
-  /// recording, so pressing the current one records it instead of summoning.
-  var onRecordingChanged: (Bool) -> Void = { _ in }
+  var hooks = ShortcutHooks()
 
   func makeNSView(context: Context) -> RecorderButton {
     let button = RecorderButton()
-    button.onRecord = { hotKey = $0 }
-    button.onRecordingChanged = onRecordingChanged
-    button.hotKey = hotKey
+    updateNSView(button, context: context)
     return button
   }
 
   func updateNSView(_ button: RecorderButton, context: Context) {
     button.onRecord = { hotKey = $0 }
-    button.onRecordingChanged = onRecordingChanged
+    button.onRecordingChanged = hooks.recordingChanged
+    button.register = hooks.register
     button.hotKey = hotKey
   }
 
@@ -29,7 +28,15 @@ struct HotKeyRecorder: NSViewRepresentable {
   final class RecorderButton: NSButton {
     var onRecord: ((HotKey) -> Void)?
     var onRecordingChanged: ((Bool) -> Void)?
+    /// Makes a shortcut the global one; false when it is taken.
+    var register: ((HotKey) -> Bool)?
     var hotKey = HotKey.commandEscape { didSet { updateTitle() } }
+
+    /// Seconds a refusal stays on the button.
+    private static let messageSeconds: TimeInterval = 2
+    /// Why the last combination was refused, shown in place of the shortcut for a moment.
+    private var message: String? { didSet { updateTitle() } }
+    private var clearMessage: DispatchWorkItem?
 
     private var recording = false {
       didSet {
@@ -71,6 +78,7 @@ struct HotKeyRecorder: NSViewRepresentable {
     }
 
     @objc private func clicked() {
+      show(message: nil)
       if recording {
         recording = false
       } else if window?.makeFirstResponder(self) == true {
@@ -98,14 +106,35 @@ struct HotKeyRecorder: NSViewRepresentable {
         recording = false
         return
       }
-      guard !flags.intersection([.command, .option, .control]).isEmpty else {
-        NSSound.beep()
-        return
-      }
       let recorded = HotKey(keyCode: UInt32(event.keyCode), modifiers: Self.carbonModifiers(flags))
-      recording = false
-      hotKey = recorded
-      onRecord?(recorded)
+      let previous = hotKey
+      recording = false  // turns the previous shortcut back on
+      switch HotKeyRules.problem(for: recorded) {
+      case .needsCommandOrControl?:
+        show(message: "Needs ⌘ or ⌃")
+      case .reserved?:
+        show(message: "Reserved")
+      case nil:
+        if register?(recorded) ?? true {
+          hotKey = recorded
+          onRecord?(recorded)
+        } else {
+          _ = register?(previous)
+          show(message: "Already in use")
+        }
+      }
+    }
+
+    /// Shows `text` in place of the shortcut for `messageSeconds`; `nil` clears it at once.
+    private func show(message text: String?) {
+      clearMessage?.cancel()
+      clearMessage = nil
+      if text != nil { NSSound.beep() }
+      message = text
+      guard text != nil else { return }
+      let clear = DispatchWorkItem { [weak self] in self?.message = nil }
+      clearMessage = clear
+      DispatchQueue.main.asyncAfter(deadline: .now() + Self.messageSeconds, execute: clear)
     }
 
     /// The shortcut is off while recording, so recording must end when the owner turns to anything
@@ -139,7 +168,7 @@ struct HotKeyRecorder: NSViewRepresentable {
     }
 
     private func updateTitle() {
-      title = recording ? "Press a shortcut…" : HotKeyRecorder.describe(hotKey)
+      title = recording ? "Press a shortcut…" : message ?? HotKeyRecorder.describe(hotKey)
       setAccessibilityValue(title)
     }
 

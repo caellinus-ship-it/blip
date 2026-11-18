@@ -29,7 +29,7 @@ public enum BrainCommand {
 /// The system prompt, built from the owner's settings.
 public enum PromptBuilder {
   public static func systemPrompt(_ settings: BlipSettings) -> String {
-    "You are \(settings.name), a tiny pixel creature who flies a spaceship on the user's Mac and answers "
+    "You are \(settings.displayName), a tiny pixel creature who flies a spaceship on the user's Mac and answers "
       + "questions about what is on their screen. Each message comes with a screenshot of their screen taken "
       + "the moment they asked, and a numbered list of their open windows. "
       + "\(personality(settings.personality)) \(length(settings.answers)) "
@@ -44,7 +44,9 @@ public enum PromptBuilder {
     switch p {
     case .playful: return "Be playful, warm and a little cheeky, but never at the cost of a clear answer."
     case .plain: return "Be plain, direct and helpful."
-    case .custom(let text): return "Personality: " + text
+    case .custom(let text):
+      let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      return trimmed.isEmpty ? personality(.playful) : "Personality: " + trimmed
     }
   }
 

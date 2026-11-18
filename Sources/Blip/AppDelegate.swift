@@ -60,10 +60,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys = HotKeyCenter(hotKey: store.settings.hotKey) { [weak self] in
       MainActor.assumeIsolated { self?.summonPressed() }
     }
-    settingsWindow = SettingsWindowController(store: store) { [weak self] recording in
-      guard let self, let store = self.store else { return }
-      if recording { self.hotKeys?.suspend() } else { self.hotKeys?.update(store.settings.hotKey) }
-    }
+    let shortcut = ShortcutHooks(
+      recordingChanged: { [weak self] recording in
+        guard let self, let store = self.store else { return }
+        if recording { self.hotKeys?.suspend() } else { self.hotKeys?.update(store.settings.hotKey) }
+      },
+      register: { [weak self] hotKey in self?.hotKeys?.update(hotKey) ?? false })
+    settingsWindow = SettingsWindowController(store: store, shortcut: shortcut)
     store.onChange = { [weak self] old, new in self?.settingsChanged(from: old, to: new) }
     LoginItem.matchAtFirstLaunch(store.settings.launchAtLogin)
 
@@ -100,7 +103,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   @MainActor @objc private func summonPressed() {
+    flushBrainRestart()  // so a summon right after a name or personality change already uses it
     summon?.shortcutPressed()
+  }
+
+  /// Runs a pending standby restart now instead of after the quiet period.
+  @MainActor private func flushBrainRestart() {
+    guard let restart = brainRestart, !restart.isCancelled else { return }
+    restart.cancel()
+    brainRestart = nil
+    pool?.settingsChanged()
   }
 
   @MainActor @objc private func openSettings() {
@@ -114,7 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if new.name != old.name || new.personality != old.personality || new.answers != old.answers
       || new.model != old.model || new.claudePath != old.claudePath {
       brainRestart?.cancel()
-      let restart = DispatchWorkItem { [weak self] in self?.pool?.settingsChanged() }
+      let restart = DispatchWorkItem { [weak self] in
+        self?.brainRestart = nil
+        self?.pool?.settingsChanged()
+      }
       brainRestart = restart
       DispatchQueue.main.asyncAfter(deadline: .now() + Self.brainRestartDelay, execute: restart)
     }
@@ -135,7 +150,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// Blip as a login item of the owner's account.
-private enum LoginItem {
+enum LoginItem {
+  /// Whether Blip is set to start at login right now, as macOS sees it. Waiting for the owner's
+  /// approval in System Settings counts as on.
+  static var isOn: Bool {
+    let status = SMAppService.mainApp.status
+    return status == .enabled || status == .requiresApproval
+  }
+
+  /// macOS holds the login item until the owner allows it in System Settings.
+  static var needsApproval: Bool { SMAppService.mainApp.status == .requiresApproval }
+
   /// Set once registration has been made to match the setting, so a later launch never undoes a
   /// change the owner made in System Settings.
   private static let matchedKey = "loginItemMatched"

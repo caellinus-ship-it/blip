@@ -24,6 +24,12 @@ import Testing
     #expect(PromptBuilder.systemPrompt(BlipSettings()).contains("Be playful, warm and a little cheeky"))
     #expect(PromptBuilder.systemPrompt(BlipSettings()).contains("one to three short sentences"))
   }
+  @Test func promptFallsBackForEmptyNameAndPersonality() {
+    var s = BlipSettings(); s.name = " "; s.personality = .custom("  ")
+    let p = PromptBuilder.systemPrompt(s)
+    #expect(p.hasPrefix("You are Blip, a tiny pixel creature"))
+    #expect(p.contains("Be playful, warm and a little cheeky")); #expect(!p.contains("Personality:"))
+  }
   @Test func windowListFormatsAndTruncates() {
     let w = [WindowInfo(id: 1, app: "Safari", title: "Apple"), WindowInfo(id: 2, app: "Notes", title: ""),
              WindowInfo(id: 3, app: "Finder", title: "Finder")]

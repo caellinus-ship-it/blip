@@ -24,4 +24,10 @@ import Testing
     var s = BlipSettings(); s.comet = false
     #expect(try JSONDecoder().decode(BlipSettings.self, from: JSONEncoder().encode(s)).comet == false)
   }
+  @Test func displayNameFallsBack() {
+    var s = BlipSettings(); #expect(s.displayName == "Blip")
+    s.name = "  Zap "; #expect(s.displayName == "Zap")
+    s.name = "   "; #expect(s.displayName == "Blip")
+    s.name = ""; #expect(s.displayName == "Blip")
+  }
 }

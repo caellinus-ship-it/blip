@@ -18,6 +18,7 @@ struct OnboardingView: View {
   static let panel = Color(rgba: 0x1C1C2BFF)
   static let text = Color(rgba: 0xE8E8F2FF)
   static let secondaryText = Color(rgba: 0x9A9AB2FF)
+  static let previewSize = CGSize(width: 192, height: 220)
 
   @ObservedObject var store: SettingsStore
   var onDone: () -> Void
@@ -26,13 +27,13 @@ struct OnboardingView: View {
   /// The macOS prompt shows only once; after that, Turn on opens the page in System Settings.
   @State private var askedForScreen = false
 
-  private var name: String { store.settings.name }
+  private var name: String { store.settings.displayName }
   private var accent: Color { Color(rgba: ColorRamp(store.settings.trailColor).main) }
 
   var body: some View {
     HStack(alignment: .top, spacing: 22) {
-      CharacterPreview(settings: store.settings)
-        .frame(width: CharacterPreview.size.width, height: CharacterPreview.size.height)
+      CharacterPreview(size: Self.previewSize, settings: store.settings, entrance: false)
+        .frame(width: Self.previewSize.width, height: Self.previewSize.height)
         .background(Self.panel)
         .overlay(Rectangle().strokeBorder(accent.opacity(0.6), lineWidth: 2))
 
@@ -62,7 +63,7 @@ struct OnboardingView: View {
             .keyboardShortcut(.defaultAction)
         }
       }
-      .frame(maxWidth: .infinity, minHeight: CharacterPreview.size.height, alignment: .topLeading)
+      .frame(maxWidth: .infinity, minHeight: Self.previewSize.height, alignment: .topLeading)
     }
     .padding(24)
     .frame(width: Self.width)
@@ -107,7 +108,7 @@ struct OnboardingView: View {
 }
 
 /// A square-cornered button in the arcade style.
-private struct ArcadeButtonStyle: ButtonStyle {
+struct ArcadeButtonStyle: ButtonStyle {
   let fill: Color
   let textColor: Color
   var border: Color?
