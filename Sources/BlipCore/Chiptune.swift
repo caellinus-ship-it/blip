@@ -1,7 +1,7 @@
 import Foundation
 
 /// One note of a sound effect: a pitch held for a time. A frequency of 0 is a rest.
-public struct Note: Equatable {
+public struct Note: Equatable, Sendable {
   public let frequency: Double
   /// Seconds.
   public let duration: Double
