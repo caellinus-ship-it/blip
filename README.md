@@ -12,6 +12,19 @@ every change.
 This is a personal project, lightly tested on one Mac. Read [Before you run it](#before-you-run-it)
 first, and use it at your own risk.
 
+## What you can change
+
+Everything is in Settings, with a live preview:
+
+- **Creature:** blob, ghost, cat, alien, and a Christmas set of Santa, snowman and reindeer.
+- **Ship:** rocket, saucer, bubble pod, star ship, sleigh.
+- **Trail:** comet, flame, smoke rings, echoes, lightning, confetti, snow, in any color.
+- **Flight:** how it arrives (comet, warp, sparkle, bubble), the path it takes, and how fast.
+- **Behavior:** its eyes follow your pointer, it squints while it reads, hops when it finishes an
+  answer, jumps when something goes wrong, and dozes off if you leave it alone. A scan line sweeps
+  the screen whenever it actually takes a look, so you can tell when it did. Each can be turned off.
+- **Assistant:** its name, personality, answer length and model.
+
 ## Before you run it
 
 - **It uses your Claude account.** Blip runs the `claude` command-line tool with whatever account
@@ -101,7 +114,8 @@ defaults delete com.blip.assistant
 ## For development
 
 - `swift run blip-snap --creature blob --ship rocket --trail lightning --color cyan --tick 60 --out frame.png`
-  renders one animation frame to a PNG (`--dismiss <tick>` starts the fly-off at that tick).
+  renders one animation frame to a PNG (`--dismiss <tick>` starts the fly-off at that tick; run it
+  with no arguments for the other options, such as `--mood`, `--look` and `--scan`).
 - `BLIP_DEBUG=1` logs events, launches and sounds to stderr; `BLIP_NO_CLAUDE=1` runs without
   starting `claude`; `BLIP_CLAUDE_PATH=<path>` runs a different `claude`.
 - `kill -USR1 $(pgrep -x Blip)` does what the shortcut does; `kill -USR2 $(pgrep -x Blip)` opens
