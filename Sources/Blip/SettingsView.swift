@@ -135,6 +135,8 @@ struct SettingsView: View {
         ColorPicker("Custom trail color", selection: customTrailColor, supportsOpacity: false)
           .labelsHidden()
       }
+      Toggle("Comet entrance", isOn: settings.comet)
+        .accessibilityLabel("Comet entrance")
       Toggle("Aura matches creature", isOn: auraMatchesCreature)
         .accessibilityLabel("Aura matches creature")
       ColorPicker("Aura color", selection: auraColor, supportsOpacity: false)

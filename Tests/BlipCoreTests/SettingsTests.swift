@@ -17,4 +17,11 @@ import Testing
     let partial = try JSONDecoder().decode(BlipSettings.self, from: Data(#"{"name":"Old"}"#.utf8))
     #expect(partial.name == "Old" && partial.trail == .lightning)
   }
+  @Test func cometDefaultsOnAndToleratesMissingKey() throws {
+    #expect(BlipSettings().comet)
+    let old = try JSONDecoder().decode(BlipSettings.self, from: Data(#"{"name":"Old"}"#.utf8))
+    #expect(old.comet)
+    var s = BlipSettings(); s.comet = false
+    #expect(try JSONDecoder().decode(BlipSettings.self, from: JSONEncoder().encode(s)).comet == false)
+  }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
-/// One whole frame of Blip: the ship's motion, its trail, the aura and the
-/// sprites, on the fixed 60 Hz tick. Layout follows `frame()` in
+/// One whole frame of Blip: the ship's motion, its trail, the comet fire, the
+/// aura and the sprites, on the fixed 60 Hz tick. Layout follows `frame()` in
 /// `docs/reference/mockup.html`, in arcade pixels relative to the ship's
 /// top-centre `(x, y)`.
 public struct Scene {
@@ -12,6 +12,8 @@ public struct Scene {
   static let bobTicks = 30
   /// Ticks the trail keeps running after the ship is gone, so the fly-off is not cut short.
   static let lingerTicks = 60
+  /// Half the width of the body the comet fire wraps.
+  static let cometHalfWidth = 12
 
   static let domeColor: RGBA = 0xBAE6FDFF
   static let white: RGBA = 0xFFFFFFFF
@@ -35,6 +37,8 @@ public struct Scene {
   private let auraColor: RGBA?
   private var motion: ShipMotion
   private var trail: TrailSystem
+  /// The fire around the ship in flight; `nil` when the comet setting is off.
+  private var shroud: CometShroud?
   private var ticks = 0
   private var step = 0
   private var ticksIntoStep = 0
@@ -48,6 +52,7 @@ public struct Scene {
     auraColor = settings.auraColor
     motion = ShipMotion(bufferWidth: bufferWidth, bufferHeight: bufferHeight, hover: settings.hover)
     trail = TrailSystem(style: settings.trail, seed: seed)
+    shroud = settings.comet ? CometShroud(seed: seed ^ 0x636F_6D65_74) : nil  // "comet", so it differs from the trail's
   }
 
   public mutating func tick() {
@@ -61,7 +66,9 @@ public struct Scene {
       step += 1
       ticksIntoStep = 0
     }
+    let lastY = motion.y
     motion.tick()
+    shroud?.tick(flying: motion.flying, velocityY: motion.y - lastY)
     trail.tick(
       shipX: motion.x, shipY: motion.y, exhaustY: motion.y + shipSprite.height, flying: motion.flying)
   }
@@ -84,7 +91,13 @@ public struct Scene {
     }
 
     trail.draw(into: &b, ramp: ramp, silhouette: silhouette)
-    drawAura(into: &b, x: x, y: y)
+    if let shroud {
+      shroud.draw(
+        into: &b, ramp: ramp, centerX: x, top: y - 12, bottom: y + shipSprite.height - 1,
+        halfWidth: Self.cometHalfWidth)
+    }
+    // While the fire is strong it takes the aura's place.
+    if (shroud?.strength ?? 0) <= 0.5 { drawAura(into: &b, x: x, y: y) }
 
     let blink = step % 10 == 0
     let bob = (ticks / Self.bobTicks) % 2

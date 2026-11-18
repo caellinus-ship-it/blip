@@ -32,4 +32,26 @@ import Testing
     b.thinking = true; for _ in 0..<6 { a.tick(); b.tick() }
     #expect(frame(a).pixels != frame(b).pixels)
   }
+  @Test func cometShowsInFlightAndIsGoneInHover() {
+    var set = BlipSettings(); set.hover = .still; set.trail = .rings
+    var s = Scene(settings: set, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    for _ in 0..<45 { s.tick() }
+    var flying = PixelBuffer(width: 240, height: 200); s.render(into: &flying)
+    for _ in 0..<255 { s.tick() }
+    var hovering = PixelBuffer(width: 240, height: 200); s.render(into: &hovering)
+    #expect(flying.pixels.filter { $0 != 0 }.count > hovering.pixels.filter { $0 != 0 }.count + 150)
+  }
+  @Test func cometOffMatchesNoShroud() {
+    var on = BlipSettings(); on.hover = .still; on.trail = .rings
+    var off = on; off.comet = false
+    var a = Scene(settings: on, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    var b = Scene(settings: off, bufferWidth: 240, bufferHeight: 200, seed: 1)
+    for _ in 0..<45 { a.tick(); b.tick() }
+    var fa = PixelBuffer(width: 240, height: 200), fb = PixelBuffer(width: 240, height: 200)
+    a.render(into: &fa); b.render(into: &fb)
+    #expect(fa.pixels.filter { $0 != 0 }.count > fb.pixels.filter { $0 != 0 }.count + 150)
+    for _ in 0..<255 { a.tick(); b.tick() }
+    fa.clear(); fb.clear(); a.render(into: &fa); b.render(into: &fb)
+    #expect(fa.pixels == fb.pixels)
+  }
 }

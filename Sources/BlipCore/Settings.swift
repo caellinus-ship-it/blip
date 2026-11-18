@@ -56,6 +56,8 @@ public struct BlipSettings: Codable, Equatable {
   public var size = SizeOption.medium
   public var trail = TrailStyle.lightning
   public var trailColor = TrailColor.cyan
+  /// The ship flies in and off wrapped in fire, like a comet.
+  public var comet = true
   /// The aura's color; `nil` means use the creature's own colors.
   public var auraColor: RGBA? = nil
   public var bubbleColor: RGBA = 0x3B82F6FF
@@ -80,6 +82,7 @@ public struct BlipSettings: Codable, Equatable {
     size = try c.decodeIfPresent(SizeOption.self, forKey: .size) ?? d.size
     trail = try c.decodeIfPresent(TrailStyle.self, forKey: .trail) ?? d.trail
     trailColor = try c.decodeIfPresent(TrailColor.self, forKey: .trailColor) ?? d.trailColor
+    comet = try c.decodeIfPresent(Bool.self, forKey: .comet) ?? d.comet
     auraColor = try c.decodeIfPresent(RGBA.self, forKey: .auraColor) ?? d.auraColor
     bubbleColor = try c.decodeIfPresent(RGBA.self, forKey: .bubbleColor) ?? d.bubbleColor
     hover = try c.decodeIfPresent(HoverMotion.self, forKey: .hover) ?? d.hover
