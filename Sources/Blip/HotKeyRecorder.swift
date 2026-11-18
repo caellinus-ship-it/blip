@@ -34,10 +34,13 @@ struct HotKeyRecorder: NSViewRepresentable {
     private var recording = false {
       didSet {
         guard recording != oldValue else { return }
+        recording ? watchForLeaving() : stopWatching()
         updateTitle()
         onRecordingChanged?(recording)
       }
     }
+    /// While recording: observers that cancel it when the owner moves on.
+    private var leaveObservers: [(NotificationCenter, NSObjectProtocol)] = []
 
     init() {
       super.init(frame: .zero)
@@ -50,6 +53,10 @@ struct HotKeyRecorder: NSViewRepresentable {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    deinit {
+      for (center, observer) in leaveObservers { center.removeObserver(observer) }
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -99,6 +106,36 @@ struct HotKeyRecorder: NSViewRepresentable {
       recording = false
       hotKey = recorded
       onRecord?(recorded)
+    }
+
+    /// The shortcut is off while recording, so recording must end when the owner turns to anything
+    /// else: the window stops being key, Blip stops being active, or another app comes forward (which
+    /// covers a Settings window that was never key because macOS declined to activate Blip).
+    private func watchForLeaving() {
+      stopWatching()
+      let cancel: @Sendable (Notification) -> Void = { [weak self] _ in
+        MainActor.assumeIsolated { self?.recording = false }
+      }
+      let local = NotificationCenter.default
+      leaveObservers.append(
+        (local, local.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main,
+                                  using: cancel)))
+      leaveObservers.append(
+        (local, local.addObserver(forName: NSApplication.didResignActiveNotification, object: nil,
+                                  queue: .main, using: cancel)))
+      let workspace = NSWorkspace.shared.notificationCenter
+      leaveObservers.append(
+        (workspace, workspace.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil,
+                                          queue: .main) { [weak self] note in
+          let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+          guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+          MainActor.assumeIsolated { self?.recording = false }
+        }))
+    }
+
+    private func stopWatching() {
+      for (center, observer) in leaveObservers { center.removeObserver(observer) }
+      leaveObservers = []
     }
 
     private func updateTitle() {
