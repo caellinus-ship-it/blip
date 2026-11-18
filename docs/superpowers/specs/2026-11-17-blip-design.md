@@ -326,3 +326,29 @@ screen capture and the overlay are all first-class there.
 - An end-to-end run on this Mac: summon, ask about the screen by typing and
   by voice, ask about one window, drag, dismiss, summon again and confirm
   it has forgotten.
+
+## Addendum, 2026-11-17: comet entrance and exit
+
+Asked for by the owner during the build **(owner)**: when the character is
+summoned and when it leaves, it should look like a comet. The body is
+wrapped in fire, and the fire streams off behind it, opposite to the way it
+is travelling.
+
+Decisions **(call)**:
+
+- This is a flight effect on top of whichever trail is chosen, not a
+  seventh trail style. It shows on every fly-in and fly-off.
+- It uses the chosen trail color, so "fire" gives a red and yellow comet
+  and "cyan" an icy one.
+- Shape: a glowing cap hugging the leading side of the ship and creature,
+  flame sheaths running down both sides of the body, and a long tapering
+  tail behind, with embers left in its wake. Same arcade rules as
+  everything else: whole pixels, stepped colors, flicker by redrawing, no
+  alpha fades.
+- The creature and ship stay readable: the fire sits around and behind
+  them, never over the face.
+- It eases away as the ship settles into its hover (never cuts off) and
+  flares up at once when the ship is dismissed.
+- A switch in settings, under Look, turns it off **(owner)**. It is on by
+  default **(call)**. With it off, fly-in and fly-off show only the chosen
+  trail, as before.
